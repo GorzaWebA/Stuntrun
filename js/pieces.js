@@ -1,0 +1,370 @@
+// Track piece catalogue. Every piece is described in local tile space: the car
+// enters through connector 0 on the back edge of tile (0,0) heading +Z.
+// Local +X is to the driver's LEFT. Pieces are built from "ribbons": centre
+// line curves that get swept with the road cross-section.
+import * as THREE from '../vendor/three.module.min.js';
+import { TILE, LEVEL, ROAD_HALF, CURB_W, LINE_W, DECK_T, COLORS } from './config.js';
+import { SURF } from './collision.js';
+import { MeshBuilder } from './geometry.js';
+
+const T = TILE;
+const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
+const smooth = (u) => u * u * (3 - 2 * u);
+const clamp01 = (u) => Math.max(0, Math.min(1, u));
+
+// Directions: 0:+Z 1:+X 2:-Z 3:-X
+export const DIR_X = [0, 1, 0, -1];
+export const DIR_Z = [1, 0, -1, 0];
+
+const STRAIGHT_CONNS = [{ x: 0, z: 0, y: 0, d: 2 }, { x: 0, z: 0, y: 0, d: 0 }];
+
+function lineRibbon(x0, y0, z0, x1, y1, z1, opts = {}) {
+  const len = Math.hypot(x1 - x0, y1 - y0, z1 - z0);
+  return {
+    segs: Math.max(2, Math.round(len / 2.5)),
+    pos: (t, o) => o.set(x0 + (x1 - x0) * t, y0 + (y1 - y0) * t, z0 + (z1 - z0) * t),
+    ...opts,
+  };
+}
+
+const straightRibbon = (opts) => lineRibbon(0, 0, -T / 2, 0, 0, T / 2, { segs: 8, ...opts });
+
+function turnDef(N) {
+  const R = (N - 0.5) * T;
+  return {
+    conns: [{ x: 0, z: 0, y: 0, d: 2 }, { x: N - 1, z: N - 1, y: 0, d: 1 }],
+    ribbons: () => [{
+      segs: [0, 8, 18, 28][N],
+      pos: (t, o) => {
+        const a = t * Math.PI / 2;
+        return o.set(R - R * Math.cos(a), 0, -T / 2 + R * Math.sin(a));
+      },
+    }],
+  };
+}
+
+function bankDef(N, bankDeg) {
+  const R = (N - 0.5) * T;
+  const bmax = bankDeg * Math.PI / 180;
+  const bank = (t) => bmax * Math.sin(Math.PI * t);
+  return {
+    conns: [{ x: 0, z: 0, y: 0, d: 2 }, { x: N - 1, z: N - 1, y: 0, d: 1 }],
+    ribbons: () => [{
+      segs: [0, 10, 22, 32][N],
+      curb: 1.0,
+      pos: (t, o) => {
+        const a = t * Math.PI / 2;
+        return o.set(R - R * Math.cos(a), (ROAD_HALF + 0.2) * Math.sin(bank(t)), -T / 2 + R * Math.sin(a));
+      },
+      up: (t, o) => {
+        const a = t * Math.PI / 2, b = bank(t);
+        return o.set(Math.cos(a) * Math.sin(b), Math.cos(b), -Math.sin(a) * Math.sin(b));
+      },
+    }],
+  };
+}
+
+// Two circular-ish arcs: constant curvature magnitude keeps crests gentle.
+const easeArc = (u) => (u < 0.5 ? 2 * u * u : 1 - 2 * (1 - u) * (1 - u));
+
+function rampDef(len, rise) {
+  return {
+    conns: [{ x: 0, z: 0, y: 0, d: 2 }, { x: 0, z: len - 1, y: rise, d: 0 }],
+    ribbons: () => [{
+      segs: 8 * len,
+      pos: (t, o) => o.set(0, rise * LEVEL * easeArc(t), -T / 2 + len * T * t),
+    }],
+  };
+}
+
+function loopDef(side) {
+  const R = 15, zc = T / 2;
+  return {
+    conns: [{ x: 0, z: 0, y: 0, d: 2 }, { x: side, z: 1, y: 0, d: 0 }],
+    ribbons: () => [
+      lineRibbon(0, 0, -T / 2, 0, 0, zc, { segs: 8 }),
+      {
+        segs: 60,
+        curb: 1.3,
+        supports: false,
+        pos: (t, o) => {
+          const a = 2 * Math.PI * t;
+          return o.set(side * T * smooth(t), R * (1 - Math.cos(a)), zc + R * Math.sin(a));
+        },
+        up: (t, o) => {
+          const a = 2 * Math.PI * t;
+          return o.set(0, Math.cos(a), -Math.sin(a));
+        },
+      },
+      lineRibbon(side * T, 0, zc, side * T, 0, 1.5 * T, { segs: 8 }),
+    ],
+  };
+}
+
+// Order matters: indices are used in the share-code format.
+const DEFS = [
+  { id: 'start', name: 'Start', conns: STRAIGHT_CONNS, ribbons: () => [straightRibbon()], gate: { kind: 'start', z: 4 }, spawn: { z: -5 } },
+  { id: 'finish', name: 'Finish', conns: STRAIGHT_CONNS, ribbons: () => [straightRibbon()], gate: { kind: 'finish', z: 0 } },
+  { id: 'checkpoint', name: 'Checkpoint', conns: STRAIGHT_CONNS, ribbons: () => [straightRibbon()], gate: { kind: 'checkpoint', z: 0 } },
+  { id: 'straight', name: 'Straight', conns: STRAIGHT_CONNS, ribbons: () => [straightRibbon()] },
+  { id: 'boost', name: 'Booster', conns: STRAIGHT_CONNS, ribbons: () => [straightRibbon({ boost: true })] },
+  { id: 'turn1', name: 'Tight turn', ...turnDef(1) },
+  { id: 'turn2', name: 'Turn', ...turnDef(2) },
+  { id: 'turn3', name: 'Wide turn', ...turnDef(3) },
+  { id: 'bank2', name: 'Banked turn', ...bankDef(2, 28) },
+  { id: 'bank3', name: 'Wide banked', ...bankDef(3, 32) },
+  { id: 'ramp', name: 'Ramp', ...rampDef(2, 1) },
+  { id: 'ramp2', name: 'Long ramp', ...rampDef(3, 2) },
+  {
+    id: 'kicker', name: 'Jump',
+    conns: [{ x: 0, z: 0, y: 0, d: 2 }, { x: 0, z: 0, y: 0, d: 0, open: true }],
+    ribbons: () => [{ segs: 10, pos: (t, o) => o.set(0, 3.2 * t * t, -T / 2 + T * t) }],
+  },
+  { id: 'loopL', name: 'Loop left', ...loopDef(1) },
+  { id: 'loopR', name: 'Loop right', ...loopDef(-1) },
+];
+
+export const PIECE_ORDER = DEFS.map((d) => d.id);
+export const PIECES = Object.fromEntries(DEFS.map((d) => [d.id, d]));
+
+// ---------------------------------------------------------------------------
+// Geometry generation (cached per piece type, in local space)
+
+function sampleRibbon(rib, segs = rib.segs) {
+  const frames = [];
+  let s = 0;
+  let prev = null;
+  const a = V(), b = V();
+  for (let i = 0; i <= segs; i++) {
+    const t = i / segs;
+    const p = rib.pos(t, V());
+    const e = 1e-4;
+    rib.pos(Math.max(0, t - e), a);
+    rib.pos(Math.min(1, t + e), b);
+    const tan = b.sub(a).normalize();
+    const uh = rib.up ? rib.up(t, V()) : V(0, 1, 0);
+    const lat = V().crossVectors(uh, tan).normalize();
+    const up = V().crossVectors(tan, lat).normalize();
+    if (prev) s += p.distanceTo(prev.p);
+    const f = { p, t: tan, l: lat, u: up, s };
+    frames.push(f);
+    prev = f;
+  }
+  return frames;
+}
+
+function profileEdges(rib) {
+  const H = ROAD_HALF, inner = H - CURB_W, roadIn = inner - LINE_W, D = DECK_T;
+  const ch = rib.curb ?? 0.9;
+  const e = [];
+  e.push([H, -D, H, ch, 'side']);
+  e.push([H, ch, inner, ch, 'curbTop']);
+  e.push([inner, ch, inner, 0, 'curbIn']);
+  e.push([inner, 0, roadIn, 0, 'line']);
+  if (rib.boost) {
+    e.push([roadIn, 0, 4, 0, 'asphalt']);
+    e.push([4, 0, -4, 0, 'boost']);
+    e.push([-4, 0, -roadIn, 0, 'asphalt']);
+  } else {
+    e.push([roadIn, 0, -roadIn, 0, 'asphalt']);
+  }
+  e.push([-roadIn, 0, -inner, 0, 'line']);
+  e.push([-inner, 0, -inner, ch, 'curbIn']);
+  e.push([-inner, ch, -H, ch, 'curbTop']);
+  e.push([-H, ch, -H, -D, 'side']);
+  e.push([-H, -D, H, -D, 'bottom']);
+  return e;
+}
+
+function edgeStyle(kind, stripe) {
+  switch (kind) {
+    case 'side': return [COLORS.side, SURF.WALL];
+    case 'curbTop': return [stripe ? COLORS.curbA : COLORS.curbB, SURF.WALL];
+    case 'curbIn': return [COLORS.curbWall, SURF.WALL];
+    case 'line': return [COLORS.line, SURF.ROAD];
+    case 'asphalt': return [COLORS.asphalt, SURF.ROAD];
+    case 'boost': return [stripe ? COLORS.boostA : COLORS.boostB, SURF.BOOST];
+    default: return [COLORS.bottom, SURF.WALL];
+  }
+}
+
+const P = (f, s, h) => V().copy(f.p).addScaledVector(f.l, s).addScaledVector(f.u, h);
+
+function buildRibbon(mb, rib, frames, capStart, capEnd) {
+  const edges = profileEdges(rib);
+  for (let i = 0; i < frames.length - 1; i++) {
+    const f0 = frames[i], f1 = frames[i + 1];
+    const stripe = i % 2 === 0;
+    for (const [s0, h0, s1, h1, kind] of edges) {
+      const [color, surf] = edgeStyle(kind, stripe);
+      mb.quad(P(f0, s0, h0), P(f0, s1, h1), P(f1, s1, h1), P(f1, s0, h0), color, surf);
+    }
+  }
+  const H = ROAD_HALF, inner = H - CURB_W, D = DECK_T, ch = rib.curb ?? 0.9;
+  const blocks = [
+    [[H, -D], [H, ch], [inner, ch], [inner, -D]],
+    [[inner, -D], [inner, 0], [-inner, 0], [-inner, -D]],
+    [[-inner, -D], [-inner, ch], [-H, ch], [-H, -D]],
+  ];
+  const cap = (f, reverse) => {
+    for (const b of blocks) {
+      const pts = b.map(([s, h]) => P(f, s, h));
+      if (reverse) pts.reverse();
+      mb.quad(pts[0], pts[1], pts[2], pts[3], COLORS.side, SURF.WALL);
+    }
+  };
+  if (capStart) cap(frames[0], true);
+  if (capEnd) cap(frames[frames.length - 1], false);
+}
+
+function buildBoostArrows(mb, frames) {
+  const total = frames[frames.length - 1].s;
+  for (const at of [0.2, 0.5, 0.8]) {
+    // find frame at arc length
+    const target = total * at;
+    let f = frames[0];
+    for (const fr of frames) { if (fr.s <= target) f = fr; }
+    const pt = (s, a) => V().copy(f.p).addScaledVector(f.l, s).addScaledVector(f.t, a).addScaledVector(f.u, 0.05);
+    mb.quad(pt(3, -1.4), pt(0, 0), pt(0, 1.1), pt(3, -0.3), 0xffffff);
+    mb.quad(pt(-3, -0.3), pt(0, 1.1), pt(0, 0), pt(-3, -1.4), 0xffffff);
+  }
+}
+
+function buildGate(kind, gz) {
+  const frame = new MeshBuilder();
+  const banner = new MeshBuilder();
+  const c = COLORS.gateFrame;
+  // pillars
+  frame.box(8.4, -0.6, gz - 0.6, 9.6, 9.6, gz + 0.6, c);
+  frame.box(-9.6, -0.6, gz - 0.6, -8.4, 9.6, gz + 0.6, c);
+  // pillar caps
+  frame.box(8.2, 9.6, gz - 0.8, 9.8, 10.1, gz + 0.8, c);
+  frame.box(-9.8, 9.6, gz - 0.8, -8.2, 10.1, gz + 0.8, c);
+  // crossbar
+  frame.box(-8.4, 9.45, gz - 0.5, 8.4, 9.75, gz + 0.5, c);
+  frame.box(-8.4, 7.85, gz - 0.5, 8.4, 8.15, gz + 0.5, c);
+  // banner faces (front and back)
+  const cols = 14, rows = 2;
+  const x0 = -8.4, x1 = 8.4, y0 = 8.15, y1 = 9.45;
+  for (let i = 0; i < cols; i++) {
+    for (let j = 0; j < rows; j++) {
+      const xa = x0 + (x1 - x0) * i / cols, xb = x0 + (x1 - x0) * (i + 1) / cols;
+      const ya = y0 + (y1 - y0) * j / rows, yb = y0 + (y1 - y0) * (j + 1) / rows;
+      let col = 0xffffff;
+      if (kind === 'finish') col = (i + j) % 2 ? COLORS.finishA : COLORS.finishB;
+      const zf = gz + 0.45, zb = gz - 0.45;
+      banner.quad(V(xa, ya, zf), V(xb, ya, zf), V(xb, yb, zf), V(xa, yb, zf), col);
+      banner.quad(V(xb, ya, zb), V(xa, ya, zb), V(xa, yb, zb), V(xb, yb, zb), col);
+    }
+  }
+  // inner banner thickness (top / bottom are hidden by bars)
+  return { frame: frame.toData(), banner: banner.toData() };
+}
+
+const cache = new Map();
+
+// Returns cached local-space data for a piece type.
+export function pieceData(id) {
+  let d = cache.get(id);
+  if (d) return d;
+  const def = PIECES[id];
+  const ribbons = def.ribbons();
+  const frameSets = ribbons.map((r) => sampleRibbon(r));
+  const variants = [];
+  for (let mask = 0; mask < 4; mask++) {
+    const mb = new MeshBuilder();
+    ribbons.forEach((rib, i) => {
+      const capS = i === 0 && (mask & 1) !== 0;
+      const capE = i === ribbons.length - 1 && (mask & 2) !== 0;
+      buildRibbon(mb, rib, frameSets[i], capS, capE);
+    });
+    variants.push(mb.toData());
+  }
+  let glow = null;
+  if (ribbons.some((r) => r.boost)) {
+    const mb = new MeshBuilder();
+    ribbons.forEach((rib, i) => { if (rib.boost) buildBoostArrows(mb, frameSets[i]); });
+    glow = mb.toData();
+  }
+  // Support pillars (local positions + deck height)
+  const supports = [];
+  ribbons.forEach((rib, i) => {
+    if (rib.supports === false) return;
+    const fr = frameSets[i];
+    const len = fr[fr.length - 1].s;
+    const n = Math.max(1, Math.round(len / T));
+    for (let k = 0; k < n; k++) {
+      const target = len * (k + 0.5) / n;
+      let best = fr[0];
+      for (const f of fr) if (Math.abs(f.s - target) < Math.abs(best.s - target)) best = f;
+      if (best.u.y > 0.9) supports.push({ x: best.p.x, z: best.p.z, y: best.p.y });
+    }
+  });
+  // Occupied cells
+  const cellSet = new Set();
+  ribbons.forEach((rib) => {
+    const fine = sampleRibbon(rib, rib.segs * 3);
+    for (let fi = 1; fi < fine.length - 1; fi++) {
+      const f = fine[fi];
+      for (let s = -ROAD_HALF + 0.5; s <= ROAD_HALF - 0.5; s += (ROAD_HALF - 0.5) / 2) {
+        const p = V().copy(f.p).addScaledVector(f.l, s);
+        const cx = Math.round(p.x / T), cz = Math.round(p.z / T);
+        const cy = Math.max(0, Math.floor((p.y + 0.5) / LEVEL));
+        cellSet.add(`${cx},${cz},${cy}`);
+      }
+    }
+  });
+  const cells = [...cellSet].map((k) => k.split(',').map(Number));
+  // Route samples for AI / camera previews
+  const route = [];
+  frameSets.forEach((fr, i) => {
+    fr.forEach((f, j) => {
+      if (i > 0 && j === 0) return;
+      route.push({ p: f.p, u: f.u });
+    });
+  });
+  d = {
+    def,
+    variants,
+    glow,
+    supports,
+    cells,
+    route,
+    gate: def.gate ? buildGate(def.gate.kind, def.gate.z) : null,
+  };
+  cache.set(id, d);
+  return d;
+}
+
+// Rotate a local tile offset by r quarter turns (matches Matrix4.makeRotationY(r*PI/2)).
+export function rotOffset(a, b, r) {
+  switch (r & 3) {
+    case 0: return [a, b];
+    case 1: return [b, -a];
+    case 2: return [-a, -b];
+    default: return [-b, a];
+  }
+}
+
+// World connectors for a placed piece {type, x, y, z, r}
+export function worldConnectors(piece) {
+  const def = PIECES[piece.type];
+  return def.conns.map((c) => {
+    const [ox, oz] = rotOffset(c.x, c.z, piece.r);
+    return { x: piece.x + ox, z: piece.z + oz, y: piece.y + c.y, d: (c.d + piece.r) & 3, open: !!c.open };
+  });
+}
+
+export function worldCells(piece) {
+  const data = pieceData(piece.type);
+  return data.cells.map(([a, b, l]) => {
+    const [ox, oz] = rotOffset(a, b, piece.r);
+    return [piece.x + ox, piece.z + oz, piece.y + l];
+  });
+}
+
+export function pieceMatrix(piece, out = new THREE.Matrix4()) {
+  out.makeRotationY(piece.r * Math.PI / 2);
+  out.setPosition(piece.x * T, piece.y * LEVEL, piece.z * T);
+  return out;
+}

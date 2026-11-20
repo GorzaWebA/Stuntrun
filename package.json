@@ -1,0 +1,11 @@
+{
+  "name": "stuntrun",
+  "version": "1.0.0",
+  "description": "Low-poly 3D stunt racing game that runs in the browser (desktop and mobile).",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "python3 -m http.server 8080",
+    "test": "node tools/simulate.mjs"
+  }
+}

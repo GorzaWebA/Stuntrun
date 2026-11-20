@@ -1,0 +1,16 @@
+{
+  "name": "Stuntrun",
+  "short_name": "Stuntrun",
+  "description": "Low-poly 3D stunt racing in the browser.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#0d1424",
+  "theme_color": "#0d1424",
+  "icons": [
+    { "src": "assets/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "assets/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "assets/icon.svg", "sizes": "any", "type": "image/svg+xml" }
+  ]
+}
