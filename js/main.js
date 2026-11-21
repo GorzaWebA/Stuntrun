@@ -1,6 +1,6 @@
 // Stuntrun – game bootstrap, state machine, HUD and menus.
 import * as THREE from '../vendor/three.module.min.js';
-import { PHYS_DT, CAR_COLORS, COLORS } from './config.js';
+import { PHYS_DT, CAR_COLORS, COLORS, PHYSICS_VERSION } from './config.js';
 import { buildTrack, disposeTrack, computeRoute, encodeTrack, decodeTrack, hashString } from './track.js';
 import { CAMPAIGN } from './tracks.js';
 import { Race } from './race.js';
@@ -251,7 +251,7 @@ class Game {
     list.innerHTML = '';
     if (tab === 'campaign') {
       CAMPAIGN.forEach((t, i) => {
-        const best = storage.best(`c.${t.id}`);
+        const best = storage.best(`c${PHYSICS_VERSION}.${t.id}`);
         const medal = medalFor(best?.time, t.medals) || 'none';
         const card = document.createElement('button');
         card.className = 'track-card';
@@ -403,7 +403,7 @@ class Game {
     this.mode = 'race';
     this.updateViewOffset();
     const track = this.loadTrack(def);
-    const key = opts.kind === 'campaign' ? `c.${def.id}` : customKey(def);
+    const key = opts.kind === 'campaign' ? `c${PHYSICS_VERSION}.${def.id}` : customKey(def);
     const race = new Race(track);
     this.session = {
       kind: opts.kind, index: opts.index, entry: opts.entry, def, key, race,
@@ -446,6 +446,23 @@ class Game {
     this.hudCache = {};
     $('#race-toast').classList.remove('show');
     this.updateHudStatic();
+  }
+
+  // R / ↺: one press puts you back at the last checkpoint, a quick double
+  // press restarts the whole run from the start.
+  restartPress() {
+    const s = this.session;
+    if (!s || s.kind === 'attract') return;
+    const now = performance.now();
+    const double = now - (this._lastRestartPress || 0) < 450;
+    this._lastRestartPress = now;
+    if (double || s.phase !== 'racing') {
+      this._lastRestartPress = 0;
+      this.restart();
+      return;
+    }
+    this.respawn();
+    this.raceToast(s.race.passed.size ? 'Back to checkpoint · press again to restart' : 'Back to start · press again to restart', 1200);
   }
 
   respawn() {
@@ -586,7 +603,7 @@ class Game {
     if ($('#modal').classList.contains('show') || $('#settings').classList.contains('show')) return;
     const s = this.session;
     if (!s || s.kind === 'attract') return;
-    if (a === 'restart') this.restart();
+    if (a === 'restart') this.restartPress();
     else if (a === 'respawn') this.respawn();
     else if (a === 'pause') { if (s.phase === 'paused') this.resume(); else this.pause(); }
     else if (a === 'camera') {
@@ -611,6 +628,7 @@ class Game {
         case 'resume': this.resume(); break;
         case 'restart': case 'retry': this.restart(); break;
         case 'respawn': this.respawn(); break;
+        case 'quick-restart': this.restartPress(); break;
         case 'pause': this.pause(); break;
         case 'exit': this.exitRace(); break;
         case 'next': {
@@ -857,7 +875,7 @@ class Game {
 }
 
 function customKey(def) {
-  return `u.${hashString(encodeTrack({ name: '', pieces: def.pieces }))}`;
+  return `u${PHYSICS_VERSION}.${hashString(encodeTrack({ name: '', pieces: def.pieces }))}`;
 }
 
 async function copyText(text) {

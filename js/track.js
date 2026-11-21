@@ -6,7 +6,7 @@ import { TILE, LEVEL, GROUND_Y, DECK_T, COLORS } from './config.js';
 import { CollisionWorld, SURF } from './collision.js';
 import { GeometryAccumulator, MeshBuilder, dataToGeometry } from './geometry.js';
 import {
-  PIECES, PIECE_ORDER, pieceData, worldConnectors, worldCells, pieceMatrix, rotOffset, DIR_X, DIR_Z,
+  PIECES, PIECE_ORDER, pieceData, worldConnectors, worldCells, pieceMatrix, rotOffset, openRoute, DIR_X, DIR_Z,
 } from './pieces.js';
 
 let _mats = null;
@@ -55,7 +55,8 @@ export function buildTrack(def, { collision = true, gates = true } = {}) {
   const world = collision ? new CollisionWorld(GROUND_Y) : null;
   const pieces = def.pieces;
   const { map, all } = buildConnectorMap(pieces);
-  const isConnected = (c) => !c.open && map.has(connKey(c.x + DIR_X[c.d], c.z + DIR_Z[c.d], c.y, (c.d + 2) & 3));
+  const neighbour = (c) => (c.open ? null : map.get(connKey(c.x + DIR_X[c.d], c.z + DIR_Z[c.d], c.y, (c.d + 2) & 3)) || null);
+  const isConnected = (c) => !!neighbour(c);
   const mats = trackMaterials();
   const acc = new GeometryAccumulator();
   const glowAcc = new GeometryAccumulator();
@@ -74,8 +75,13 @@ export function buildTrack(def, { collision = true, gates = true } = {}) {
     const data = pieceData(p.type);
     pieceMatrix(p, m);
     const cs = all[i];
-    const mask = (isConnected(cs[0]) ? 0 : 1) | (isConnected(cs[1]) ? 0 : 2);
-    acc.add(data.variants[mask], m, world);
+    let mask = 0, taper = 0;
+    cs.forEach((c, k) => {
+      const nb = neighbour(c);
+      if (!nb) mask |= 1 << k;
+      else if (!data.def.build && PIECES[pieces[nb.piece].type].build) taper |= 1 << k; // road meets open floor
+    });
+    acc.add(data.variant(mask, taper, p.y > 0), m, world);
     if (data.glow) glowAcc.add(data.glow, m, null);
     for (const s of data.supports) {
       tmp.set(s.x, s.y, s.z).applyMatrix4(m);
@@ -159,8 +165,11 @@ export function computeRoute(def) {
     const p = pieces[cur];
     const data = pieceData(p.type);
     pieceMatrix(p, m);
+    // open-area tiles can be left through any side (turtle tracks store it)
+    const exitIdx = p.exit ?? (entry ^ 1);
     let r = data.route;
-    if (entry === 1) r = [...r].reverse();
+    if (!r) r = openRoute(data.def, entry, exitIdx);
+    else if (entry === 1) r = [...r].reverse();
     for (const s of r) {
       const wp = s.p.clone().applyMatrix4(m);
       const up = s.u.clone().transformDirection(m);
@@ -177,7 +186,7 @@ export function computeRoute(def) {
       pts.push({ p: wp, u: up, piece: cur });
     }
     if (p.type === 'finish') { finished = true; break; }
-    const ex = all[cur][1 - entry];
+    const ex = all[cur][exitIdx];
     let next = null;
     for (let k = 1; k <= 5 && !next; k++) {
       for (let dy = 0; dy >= -6 && !next; dy--) {
@@ -201,16 +210,25 @@ export function computeRoute(def) {
 //   K jump kicker, BK big jump, G gap (skip a tile), OL OR loops (exit shifts left/right)
 //   WL2 WR2 WL3 WR3 wall turns (near-vertical banking)
 //   VL VR wall rides, CS corkscrew, INV upside-down section (need level >= 2)
+//   Open areas: P floor, PL PR floor where the route turns left/right, PB speed
+//   bumps, PJ jump wedge, PC cones, PWL PWR barrier on the left/right, PP pillar.
+//   "P/5" adds open floor beside the piece (total width 5); "<PP" / ">>PC"
+//   place a piece 1 / 2 tiles left / right of the last piece.
 export function buildFromScript(script, opts = {}) {
   let x = opts.x ?? 0, z = opts.z ?? 0, y = opts.y ?? 0, d = opts.d ?? 0;
   const pieces = [];
-  const place = (type, entry) => {
+  let last = null; // entry tile + heading of the last piece on the route (for side tiles)
+  const place = (type, entry, exit = null) => {
     const def = PIECES[type];
-    const ce = def.conns[entry], cx = def.conns[1 - entry];
+    const exitIdx = exit ?? (entry ^ 1);
+    const ce = def.conns[entry], cx = def.conns[exitIdx];
     const r = (((d + 2 - ce.d) % 4) + 4) % 4;
     const [ox, oz] = rotOffset(ce.x, ce.z, r);
     const px = x - ox, pz = z - oz, py = y - ce.y;
-    pieces.push({ type, x: px, y: py, z: pz, r });
+    const piece = { type, x: px, y: py, z: pz, r };
+    if (exit !== null) piece.exit = exitIdx;
+    pieces.push(piece);
+    last = { x, z, y, d };
     const [ex, ez] = rotOffset(cx.x, cx.z, r);
     const nd = (cx.d + r) & 3;
     x = px + ex + DIR_X[nd];
@@ -218,25 +236,58 @@ export function buildFromScript(script, opts = {}) {
     y = py + cx.y;
     d = nd;
   };
+  // Places a piece next to the last route piece without moving along the route.
+  const placeSide = (type, entry, offset) => {
+    if (!last) throw new Error('Side pieces need a piece before them');
+    const side = offset > 0 ? (last.d + 1) & 3 : (last.d + 3) & 3; // left / right of travel
+    const n = Math.abs(offset);
+    const def = PIECES[type];
+    const ce = def.conns[entry];
+    const r = (((last.d + 2 - ce.d) % 4) + 4) % 4;
+    const [ox, oz] = rotOffset(ce.x, ce.z, r);
+    const piece = { type, x: last.x + DIR_X[side] * n - ox, y: last.y - ce.y, z: last.z + DIR_Z[side] * n - oz, r };
+    // an obstacle replaces plain floor that was already put there
+    const i = pieces.findIndex((q) => q.type === 'plaza' && q.x === piece.x && q.z === piece.z && q.y === piece.y);
+    if (i >= 0) pieces.splice(i, 1);
+    pieces.push(piece);
+  };
   const table = {
     START: ['start', 0], S: ['straight', 0], C: ['checkpoint', 0], B: ['boost', 0], F: ['finish', 0],
     L1: ['turn1', 0], L2: ['turn2', 0], L3: ['turn3', 0], R1: ['turn1', 1], R2: ['turn2', 1], R3: ['turn3', 1],
     BL2: ['bank2', 0], BR2: ['bank2', 1], BL3: ['bank3', 0], BR3: ['bank3', 1],
     U: ['ramp', 0], D: ['ramp', 1], U2: ['ramp2', 0], D2: ['ramp2', 1],
     K: ['kicker', 0], OL: ['loopL', 0], OR: ['loopR', 0],
+    P: ['plaza', 0], PL: ['plaza', 0, 2], PR: ['plaza', 0, 3], PP: ['plazaPillar', 0],
+    PWR: ['plazaWall', 0], PWL: ['plazaWall', 1], PC: ['plazaCones', 0], PB: ['plazaBumps', 0], PJ: ['plazaJump', 0],
     BK: ['bigkick', 0], WL2: ['wall2', 0], WR2: ['wall2', 1], WL3: ['wall3', 0], WR3: ['wall3', 1],
     VL: ['wallL', 0], VR: ['wallR', 0], CS: ['corkscrew', 0], INV: ['inverted', 0],
   };
   place('start', 0);
   for (const raw of script.trim().split(/\s+/)) {
     if (!raw) continue;
-    const [tok, rep] = raw.split('*');
+    // side tiles: "<PP" one tile left of the last piece, ">>PC" two tiles right
+    const side = raw.match(/^(<+|>+)(.+)$/);
+    if (side) {
+      const e = table[side[2]];
+      if (!e) throw new Error(`Unknown track token "${side[2]}"`);
+      placeSide(e[0], e[1], side[1][0] === '<' ? side[1].length : -side[1].length);
+      continue;
+    }
+    // "P/5": the piece plus open floor on both sides (total width 5)
+    const [body, widthStr] = raw.split('/');
+    const [tok, rep] = body.split('*');
     const n = rep ? parseInt(rep, 10) : 1;
+    const width = widthStr ? parseInt(widthStr, 10) : 1;
     for (let i = 0; i < n; i++) {
       if (tok === 'G') { x += DIR_X[d]; z += DIR_Z[d]; continue; }
       const e = table[tok];
       if (!e) throw new Error(`Unknown track token "${tok}"`);
-      place(e[0], e[1]);
+      place(e[0], e[1], e[2] ?? null);
+      // open floor beside the piece (never on the side a turning tile exits through)
+      for (let k = 1; k <= (width - 1) / 2; k++) {
+        if (e[2] !== 2) placeSide('plaza', 0, k);
+        if (e[2] !== 3) placeSide('plaza', 0, -k);
+      }
     }
   }
   return pieces;

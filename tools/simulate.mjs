@@ -12,8 +12,8 @@ const scriptArg = args.find((a) => a.startsWith('--script='));
 
 const STYLES = {
   default: {},
-  cautious: { latAccel: 18, brakeDecel: 11 },
-  aggressive: { latAccel: 34, brakeDecel: 18 },
+  cautious: { latAccel: 12, brakeDecel: 9 },
+  aggressive: { latAccel: 21, brakeDecel: 14 },
 };
 
 export function simulate(def, { verbose = false, maxTime = 240, style = {} } = {}) {

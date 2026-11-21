@@ -7,7 +7,7 @@ import { CAMPAIGN } from '../js/tracks.js';
 const arg = process.argv[2] || '';
 const pieces = arg.startsWith('--script=') ? buildFromScript(arg.slice(9)) : CAMPAIGN.find((t) => t.id === arg)?.pieces;
 if (!pieces) { console.log('ids:', CAMPAIGN.map((t) => t.id).join(', ')); process.exit(1); }
-const CH = { start: 'S', finish: 'F', checkpoint: 'C', straight: '#', boost: '>', turn1: 't', turn2: 'T', turn3: 'T', bank2: 'b', bank3: 'B', ramp: '/', ramp2: '/', kicker: 'K', loopL: 'O', loopR: 'O', bigkick: 'J', wall2: 'w', wall3: 'W', wallL: '|', wallR: '|', corkscrew: '@', inverted: 'U' };
+const CH = { start: 'S', finish: 'F', checkpoint: 'C', straight: '#', boost: '>', turn1: 't', turn2: 'T', turn3: 'T', bank2: 'b', bank3: 'B', ramp: '/', ramp2: '/', kicker: 'K', loopL: 'O', loopR: 'O', bigkick: 'J', wall2: 'w', wall3: 'W', wallL: '|', wallR: '|', corkscrew: '@', inverted: 'U', plaza: 'o', plazaPillar: 'X', plazaWall: '=', plazaCones: 'c', plazaBumps: 'b', plazaJump: 'j' };
 const grid = new Map();
 let minX = 1e9, maxX = -1e9, minZ = 1e9, maxZ = -1e9;
 pieces.forEach((p) => {

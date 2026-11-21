@@ -8,6 +8,8 @@ export const LINE_W = 0.4;       // white edge line width
 export const DECK_T = 0.6;       // deck thickness below the road surface
 export const GROUND_Y = -0.3;    // height of the grass plane
 export const PHYS_DT = 1 / 240;  // fixed physics timestep
+// Bump when the handling changes so old best times / ghosts are not compared.
+export const PHYSICS_VERSION = 3;
 
 export const COLORS = {
   asphalt: 0x3a4152,

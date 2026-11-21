@@ -5,41 +5,45 @@ import { Vector3, Quaternion } from '../vendor/three.module.min.js';
 import { SURF } from './collision.js';
 
 export const CAR = {
-  mass: 1000,
-  inertia: new Vector3(1900, 2300, 950),
+  mass: 1350,
+  inertia: new Vector3(2900, 3600, 1400),
   gravity: 18,
   wheelRadius: 0.4,
   restLength: 0.42,
-  springK: 46000,
-  damping: 3200,
+  springK: 60000,
+  damping: 4300,
   bumpStart: 0.3,
-  bumpK: 400000,
+  bumpK: 540000,
   rayLift: 0.6,
-  maxSteer: 0.52,
-  steerFalloff: 14,       // m/s at which max steering halves
-  accel: 15,              // m/s^2 at standstill
+  maxSteer: 0.46,
+  steerFalloff: 9,        // m/s at which max steering halves
+  accel: 11.5,              // m/s^2 at standstill
   topSpeed: 62,           // engine limit (m/s)
   reverseAccel: 9,
   reverseSpeed: 16,
-  brake: 26,
-  coast: 1.4,
+  brake: 21,
+  coast: 1.2,
   drag: 0.00055,
-  downforce: 0.004,
-  downforceMax: 9,
+  downforce: 0.002,
+  downforceMax: 5,
   bounceLimit: 1.5,       // m/s away from the track allowed while stuck to it
   stickMin: 10,           // m/s where adhesion starts
   stickMax: 26,           // m/s where adhesion is full
-  stickPress: 7,          // extra m/s^2 pressing the car onto the track at speed
-  gripLat: 2.3,
-  gripLong: 1.6,
+  stickPress: 15,         // extra m/s^2 pressing the car onto tilted track at speed
+  gripLat: 1.5,
+  gripLong: 1.3,
+  slideGrip: 0.78,        // grip left once a tyre breaks into a slide
+  slideStart: 2.2,        // m/s of sideways slip where a tyre lets go
+  slideEnd: 0.9,          // m/s of slip where it grips again
+  contactLift: 0.62,      // how far tyre forces are raised towards the centre of mass (less = more body roll)
   grassGrip: 0.75,
   grassDrag: 4.5,
-  boostAccel: 22,
+  boostAccel: 18,
   boostTime: 1.1,
   airYaw: 1.6,
-  loadCap: 14000,
-  yawAssist: 4,
-  antiRoll: 30000,
+  loadCap: 19000,
+  yawAssist: 0.8,
+  antiRoll: 36000,
   airRollDamp: 2.5,
   airPitchAlign: 2.2,
   alignRate: 12,          // 1/s, how hard the body is turned onto the track surface
@@ -87,7 +91,7 @@ export class CarPhysics {
     this.steer = 0;
     this.wheels = WHEELS.map((w) => ({
       mount: new Vector3(w.x, w.y, w.z), front: w.front,
-      contact: false, comp: 0, load: 0, surf: -1, slip: 0, spin: 0,
+      contact: false, comp: 0, load: 0, surf: -1, slip: 0, spin: 0, sliding: false,
       n: new Vector3(0, 1, 0), dist: 0,
     }));
     this.grounded = 0;
@@ -105,6 +109,7 @@ export class CarPhysics {
     this.surfaceRate = new Vector3();
     this.hadNormal = false;
     this.stickTimer = 0;
+    this.tilt = 0;
   }
 
   reset(pos, quat, vel = null, angVel = null) {
@@ -170,7 +175,7 @@ export class CarPhysics {
 
     // --- steering (input.steer: +1 = right)
     const target = clamp(input.steer || 0, -1, 1);
-    const rate = target === 0 ? 7 : (Math.sign(target) !== Math.sign(this.steer) ? 9 : 5);
+    const rate = target === 0 ? 5 : (Math.sign(target) !== Math.sign(this.steer) ? 6.5 : 3.4);
     this.steer += clamp(target - this.steer, -rate * dt, rate * dt);
     const steerAngle = this.steer * p.maxSteer / (1 + Math.abs(fs) / p.steerFalloff);
 
@@ -262,14 +267,18 @@ export class CarPhysics {
       _na.normalize();
       this.surfaceNormal.copy(_na);
       const f = fSpeed;
+      // how far the track is tilted away from "normal ground": the stunt aids
+      // only work on walls, ceilings, loops and rolls; flat roads stay realistic
+      const tilt = clamp((0.95 - _na.y) / 0.45, 0, 1);
+      this.tilt = tilt;
       this.stickTimer = f > 0.3 ? p.stickGrace : 0;
       const gAway = Math.max(0, -p.gravity * _na.y);
-      const a = f * (gAway + p.stickPress) + Math.min(p.downforceMax, p.downforce * this.speed * this.speed);
+      const a = f * (gAway + p.stickPress * tilt) + Math.min(p.downforceMax, p.downforce * this.speed * this.speed);
       this.adhesion = f;
       this.vel.addScaledVector(_na, -a * dt);
-      // magnetic: at speed the car can't bounce away from the track surface
+      // magnetic: at speed the car can't bounce away from tilted track
       const vn = this.vel.dot(_na);
-      if (vn > p.bounceLimit) this.vel.addScaledVector(_na, -(vn - p.bounceLimit) * f);
+      if (vn > p.bounceLimit) this.vel.addScaledVector(_na, -(vn - p.bounceLimit) * f * tilt);
 
       // surface alignment: turn the body (pitch/roll only) to match the track,
       // including how fast the track itself is rotating (loops, rolls, walls)
@@ -281,7 +290,7 @@ export class CarPhysics {
       }
       this.prevNormal.copy(_na);
       this.hadNormal = true;
-      const strength = 0.3 + 0.7 * f;
+      const strength = 0.15 + 0.85 * f * tilt;
       _v.copy(this.surfaceRate).addScaledVector(_up, -this.surfaceRate.dot(_up));   // desired = track rate
       _t.crossVectors(_up, _na);                                                      // orientation error
       _v.addScaledVector(_t, p.alignRate);
@@ -330,14 +339,18 @@ export class CarPhysics {
         _r.copy(w.mount).applyQuaternion(q);
         _pc.copy(_r).addScaledVector(_up, -w.dist);
         const h = -_pc.dot(_up);
-        _pc.addScaledVector(_up, h * 0.8);
+        _pc.addScaledVector(_up, h * p.contactLift);
         _v.crossVectors(this.angVel, _pc).add(this.vel);
         const vS = _v.dot(_ws);
         const vF = _v.dot(_wf);
         const onGrass = w.surf === SURF.GRASS;
         const mu = onGrass ? p.grassGrip : 1;
         const load = Math.min(w.load, p.loadCap);
-        const maxJ = p.gripLat * mu * load * dt;
+        // tyre breakaway: once sliding, grip drops until the slip is small again
+        const absSlip = Math.abs(_v.dot(_ws));
+        if (w.sliding) { if (absSlip < p.slideEnd) w.sliding = false; } else if (absSlip > p.slideStart) w.sliding = true;
+        const slideMu = w.sliding ? p.slideGrip : 1;
+        const maxJ = p.gripLat * mu * slideMu * load * dt;
 
         // lateral: cancel sideways velocity (clamped by grip)
         let jS = -vS / this._k(_pc, _ws);
@@ -356,7 +369,7 @@ export class CarPhysics {
           const roll = p.mass * (p.grassDrag + Math.abs(vF) * 0.06) * share * dt;
           jF -= Math.sign(vF) * Math.min(roll, Math.abs(vF) / kF);
         }
-        const maxLong = p.gripLong * mu * load * dt;
+        const maxLong = p.gripLong * mu * slideMu * load * dt;
         if (Math.abs(jF) > maxLong) jF = Math.sign(jF) * maxLong;
         const tot = Math.hypot(jS, jF);
         if (tot > maxJ && tot > 0) {
@@ -422,10 +435,10 @@ export class CarPhysics {
 
     // at speed the body snaps onto the track surface (pitch/roll), which keeps
     // fast rolls, walls and loops stable
-    if (this.hadNormal && this.adhesion > 0.2 && (grounded >= 2 || this.stickTimer > 0)) {
+    if (this.hadNormal && this.adhesion > 0.2 && this.tilt > 0 && (grounded >= 2 || this.stickTimer > 0)) {
       _up.set(0, 1, 0).applyQuaternion(q);
       _sq.setFromUnitVectors(_up, this.surfaceNormal);
-      _sq2.identity().slerp(_sq, Math.min(1, p.snapRate * this.adhesion * dt));
+      _sq2.identity().slerp(_sq, Math.min(1, p.snapRate * this.adhesion * this.tilt * dt));
       q.premultiply(_sq2).normalize();
     }
 

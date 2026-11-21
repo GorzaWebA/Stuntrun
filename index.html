@@ -42,7 +42,7 @@
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19.4 13a7.5 7.5 0 0 0 0-2l2.1-1.6-2-3.5-2.5 1a7.6 7.6 0 0 0-1.7-1L15 3h-4l-.4 2.6a7.6 7.6 0 0 0-1.7 1l-2.5-1-2 3.5L6.6 11a7.5 7.5 0 0 0 0 2l-2.1 1.6 2 3.5 2.5-1c.5.4 1.1.7 1.7 1L11 21h4l.4-2.6c.6-.3 1.2-.6 1.7-1l2.5 1 2-3.5zM13 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7z"/></svg>Settings
           </button>
         </nav>
-        <p class="hint desktop-only">Arrows / WASD drive · <kbd>R</kbd> restart · <kbd>Enter</kbd> respawn · <kbd>Esc</kbd> pause</p>
+        <p class="hint desktop-only">Arrows / WASD drive · <kbd>R</kbd> back to checkpoint · <kbd>R</kbd><kbd>R</kbd> restart · <kbd>Esc</kbd> pause</p>
         <p class="hint touch-only">Turn your phone sideways for the best view.</p>
       </div>
       <button class="icon-btn corner" data-action="fullscreen" aria-label="Toggle fullscreen" title="Fullscreen">
@@ -78,7 +78,7 @@
           <div id="hud-sub"></div>
         </div>
         <div class="hud-actions">
-          <button class="icon-btn small" data-action="respawn" aria-label="Respawn at checkpoint" title="Respawn (Enter)">
+          <button class="icon-btn small" data-action="quick-restart" aria-label="Back to checkpoint, tap twice to restart" title="Back to checkpoint (R) – twice to restart">
             <svg viewBox="0 0 24 24"><path d="M12 5V2L7 6l5 4V7a5 5 0 1 1-5 5H5a7 7 0 1 0 7-7z"/></svg>
           </button>
           <button class="icon-btn small" data-action="pause" aria-label="Pause" title="Pause (Esc)">
@@ -90,7 +90,7 @@
       <div id="countdown" aria-live="assertive"></div>
       <div id="race-toast" aria-live="polite"></div>
       <div id="stunt" aria-hidden="true"></div>
-      <div id="flip-hint">Stuck? <span class="desktop-only">Press <kbd>Enter</kbd> to respawn</span><span class="touch-only">Tap ↺ to respawn</span></div>
+      <div id="flip-hint">Stuck? <span class="desktop-only">Press <kbd>R</kbd> to go back to the checkpoint</span><span class="touch-only">Tap ↺ to go back to the checkpoint</span></div>
       <div id="touch" class="touch-controls">
         <div class="touch-cluster left">
           <button data-control="left" aria-label="Steer left"><svg viewBox="0 0 24 24"><path d="M15 5 8 12l7 7z"/></svg></button>

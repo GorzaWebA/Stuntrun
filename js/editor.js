@@ -195,7 +195,7 @@ export class Editor {
   previewGeometry(type) {
     let g = this.previewGeo.get(type);
     if (!g) {
-      g = dataToGeometry(pieceData(type).variants[3]);
+      { const d = pieceData(type); g = dataToGeometry(d.variant(d.fullMask)); }
       this.previewGeo.set(type, g);
     }
     return g;
@@ -530,7 +530,7 @@ function renderThumbnails() {
   const mat = new THREE.MeshLambertMaterial({ vertexColors: true });
   for (const id of PIECE_ORDER) {
     const data = pieceData(id);
-    const geo = dataToGeometry(data.variants[3]);
+    const geo = dataToGeometry(data.variant(data.fullMask));
     const mesh = new THREE.Mesh(geo, mat);
     const group = new THREE.Group();
     group.add(mesh);

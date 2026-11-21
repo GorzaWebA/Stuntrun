@@ -7,8 +7,10 @@ const _fwd = new Vector3(), _left = new Vector3(), _up = new Vector3(), _d = new
 export class Bot {
   constructor(points, opts = {}) {
     this.pts = points;
-    this.latAccel = opts.latAccel ?? 28;
-    this.brakeDecel = opts.brakeDecel ?? 15;
+    this.latAccel = opts.latAccel ?? 17;
+    this.brakeDecel = opts.brakeDecel ?? 12;
+    this.slipComp = opts.slipComp ?? 0;
+    this.gain = opts.gain ?? 1.6;
     this.idx = 0;
     // arc length + lateral curvature
     const n = points.length;
@@ -59,9 +61,12 @@ export class Bot {
     _up.set(0, 1, 0).applyQuaternion(car.quat);
     target.sub(car.pos);
     const x = target.dot(_left), z = target.dot(_fwd);
-    const angle = Math.atan2(-x, Math.max(0.1, z));
+    // aim the direction of travel (not the nose) at the target: steadier when sliding
+    const vx = car.vel.dot(_left), vz = car.vel.dot(_fwd);
+    const slip = speed > 4 ? Math.atan2(-vx, Math.max(0.1, vz)) : 0;
+    const angle = Math.atan2(-x, Math.max(0.1, z)) - slip * this.slipComp;
     const maxSteer = car.p.maxSteer / (1 + speed / car.p.steerFalloff);
-    const steer = car.grounded === 0 ? 0 : Math.max(-1, Math.min(1, (angle * 1.6) / maxSteer));
+    const steer = car.grounded === 0 ? 0 : Math.max(-1, Math.min(1, (angle * this.gain) / maxSteer));
 
     // speed planning
     let allowed = Infinity;
@@ -74,7 +79,7 @@ export class Bot {
       allowed = Math.min(allowed, Math.sqrt(vmax * vmax + 2 * this.brakeDecel * dist));
     }
     let throttle = 1, brake = 0;
-    if (speed > allowed + 1.5) { throttle = 0; brake = Math.abs(steer) > 0.95 ? 0.4 : 1; } else if (speed > allowed) { throttle = 0; }
+    if (speed > allowed + 1.5) { throttle = 0; brake = Math.abs(steer) > 0.95 ? 0.7 : 1; } else if (speed > allowed) { throttle = 0; }
     return { steer, throttle, brake, progress: this.s[best] / this.s[this.s.length - 1] };
   }
 }

@@ -12,13 +12,15 @@ It's a static site with no build step, so GitHub Pages can host it as-is.
 
 ## Features
 
-- **Stunt physics.** A raycast-suspension car whose tyres grip the track harder the faster it goes. Above about 90 km/h it sticks to walls and ceilings, so you can ride vertical walls and drive upside down. Below about 65 km/h gravity wins and the car drops off. The body follows the track through rolls and loops, and in the air the nose follows the flight path so landings stay clean.
+- **Weighty car physics.** A 1350 kg raycast-suspension car with real body roll and weight transfer. Its tyres break into a slide when you push too hard, and they grip less until the slide settles. It's slow to change direction at speed, so brake before corners.
+- **Stunt grip.** On walls, ceilings, loops and rolls the tyres grip harder the faster you go. Above about 90 km/h the car sticks, so you can ride vertical walls and drive upside down. Below about 65 km/h gravity wins and you drop off. In the air the nose follows the flight path, so landings stay clean.
 - **Stunt pieces.** Loops, corkscrews (a full 360° roll), upside-down sections, wall rides, near-vertical wall turns, small and big jumps, ramps, banked turns and boost pads.
-- **9 campaign tracks**, from *Launch Pad* to *Grand Stunt*. Each has gold, silver and bronze medal times.
+- **Open areas with obstacles.** Wide floor sections with no barriers, where you pick your own line around pillars, barriers and cones, over speed bumps and off jump wedges. On raised platforms the open edges have a low safety rail.
+- **11 campaign tracks**, from *Launch Pad* to *Grand Stunt*. Each has gold, silver and bronze medal times.
 - **Stunt callouts.** "Big air", "Wall ride!" and "Upside down!" pop up as you pull them off.
 - **Checkpoints and respawn.** You respawn at the last checkpoint with the speed you had there.
 - **Ghost replays.** Your best run is saved and races alongside you as a translucent car.
-- **Track editor.** Place, rotate, stack and erase 22 kinds of piece on a grid, test-drive the track straight away, save it on your device and share it with a link or a code.
+- **Track editor.** Place, rotate, stack and erase 28 kinds of piece on a grid, test-drive the track straight away, save it on your device and share it with a link or a code.
 - **Mobile ready.** On-screen touch controls with multi-touch, layouts for landscape and portrait, fullscreen and installable as a home-screen app.
 - **Low-poly look.** Flat-shaded models with vertex colours, low-poly trees, rocks, mountains and clouds, and real-time shadows.
 - **Synthesised audio.** The engine, tyres, wind, boost and UI sounds are generated with WebAudio, so there are no audio files.
@@ -31,8 +33,8 @@ It's a static site with no build step, so GitHub Pages can host it as-is.
 | Accelerate | `W` / `↑` | ▲ (right) | RT / A |
 | Brake / reverse | `S` / `↓` / `Space` | ▼ (right) | LT / B |
 | Steer | `A` `D` / `←` `→` | ◀ ▶ (left) | Left stick / D-pad |
-| Respawn at checkpoint | `Enter` / `Backspace` | ↺ button | Y |
-| Restart | `R` | Pause → Restart | Back / Select |
+| Back to last checkpoint | `R` (or `Enter`) | ↺ button | Y / Back |
+| Restart from the start | `R` twice quickly | ↺ twice quickly (or Pause → Restart) | Back twice |
 | Pause | `Esc` / `P` | ❚❚ button | Start |
 | Change camera | `C` | Settings | LB / RB |
 
@@ -63,6 +65,7 @@ Every track needs one **Start** and at least one **Finish**. To finish, you have
 | Height | Ramp (+1 level over 2 tiles), Long ramp (+2 levels over 3 tiles). Rotated by 180° they work as downhills. |
 | Air | Jump (small kicker), Big jump (2-tile kicker that launches you far) |
 | Stunts | Loop left / right, Wall turn (2×2), Wide wall turn (3×3), Wall ride left / right (6 tiles), Corkscrew (360° roll, 7 tiles), Upside down (8 tiles, about 60 m driven on the ceiling) |
+| Open areas | Open floor, Pillar, Barrier, Cones, Speed bumps, Jump wedge. These are 1×1 floor tiles with no barriers that join on all four sides, so you can lay out wide plazas. |
 
 Wall turns, wall rides, corkscrews and upside-down sections roll the road around the car, so they need room below. Build them at least **2 levels up** (use ▲ in the editor). They need speed: arrive fast, or you'll fall off.
 
@@ -129,6 +132,10 @@ Campaign tracks are written in a small "turtle" script in `js/tracks.js`. Each t
 | `VL` `VR` | wall ride on the left / right wall (needs level 2 or higher) |
 | `CS` | corkscrew (needs level 2 or higher) |
 | `INV` | upside-down section (needs level 2 or higher) |
+| `P` `PL` `PR` | open floor; `PL` / `PR` turn the route left / right inside the open area |
+| `PB` `PJ` `PC` `PWL` `PWR` `PP` | open floor with speed bumps / jump wedge / cones / barrier on the left / barrier on the right / pillar |
+| `X/n` | widen with open floor to `n` tiles, for example `PB/5` |
+| `<X` `>>X` | place a piece 1 tile left / 2 tiles right of the previous one without moving on, for example `<<PP` |
 | `X*n` | repeat a token, for example `S*4` |
 
 For example, `S*2 U2 S*2 B S INV S*2 D2 S F` gives: two straights, a long ramp up two levels, two straights, a booster, a straight, an upside-down section, two straights, a long ramp back down, a straight and the finish.
@@ -138,6 +145,8 @@ Design tips from building the campaign:
 - Give jumps a long landing zone (four or more straights). A booster right before a kicker can carry you over everything.
 - Don't put a checkpoint where cars are still in the air after a jump. You have to drive through the gate.
 - Put a booster and a couple of straights before rolls and wall turns so cars arrive fast and centred.
+- The car is heavy. Leave room to brake before tight corners, especially after a jump, because you can't brake in the air.
+- Where an open area turns, use `PL` / `PR` and make it at least 3 wide so drivers can take a wider line.
 
 After adding a track, run `npm test` to check it can be finished, and `node tools/simulate.mjs --medals` to get medal times.
 

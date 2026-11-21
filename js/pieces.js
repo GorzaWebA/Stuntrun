@@ -148,6 +148,152 @@ function kickerDef(len, height, name) {
   };
 }
 
+// ---------------------------------------------------------------------------
+// Open areas: 20x20 floor tiles without barriers. They connect on all four
+// sides, so several of them form a wide open space. Some carry obstacles.
+const PLAZA_CONNS = [
+  { x: 0, z: 0, y: 0, d: 2 }, { x: 0, z: 0, y: 0, d: 0 },
+  { x: 0, z: 0, y: 0, d: 1 }, { x: 0, z: 0, y: 0, d: 3 },
+];
+const OPEN = { floorA: 0x4b5569, floorB: 0x546077, edgeA: 0xffc233, edgeB: 0x2b3448, concrete: 0xc7ccd6, hazardA: 0xffc233, hazardB: 0x23272f };
+
+function buildPlazaFloor(mb, mask, rail = false) {
+  const h = T / 2, D = DECK_T, n = 4, step = T / n;
+  for (let i = 0; i < n; i++) {
+    for (let j = 0; j < n; j++) {
+      const x0 = -h + i * step, x1 = x0 + step, z0 = -h + j * step, z1 = z0 + step;
+      mb.quad(V(x0, 0, z0), V(x0, 0, z1), V(x1, 0, z1), V(x1, 0, z0), (i + j) % 2 ? OPEN.floorA : OPEN.floorB, SURF.ROAD);
+    }
+  }
+  mb.quad(V(-h, -D, -h), V(h, -D, -h), V(h, -D, h), V(-h, -D, h), COLORS.bottom, SURF.WALL);
+  // open edges get a side face and a dashed hazard line
+  const sides = [
+    [V(h, -D, -h), V(-h, -D, -h), V(-h, 0, -h), V(h, 0, -h)],   // back  (-z)
+    [V(-h, -D, h), V(h, -D, h), V(h, 0, h), V(-h, 0, h)],       // front (+z)
+    [V(h, -D, h), V(h, -D, -h), V(h, 0, -h), V(h, 0, h)],       // left  (+x)
+    [V(-h, -D, -h), V(-h, -D, h), V(-h, 0, h), V(-h, 0, -h)],   // right (-x)
+  ];
+  sides.forEach((q, k) => {
+    if (!(mask & (1 << k))) return;
+    mb.quad(q[0], q[1], q[2], q[3], COLORS.side, SURF.WALL);
+    if (rail) {
+      // raised platforms get a low safety rail along open edges
+      const a = q[3], b = q[2];
+      const inward = V(-a.x - b.x, 0, -a.z - b.z).normalize();
+      const segs = 5;
+      for (let i = 0; i < segs; i++) {
+        const p0 = V().lerpVectors(a, b, i / segs), p1 = V().lerpVectors(a, b, (i + 1) / segs);
+        const xs = [p0.x, p1.x, p0.x + inward.x * 0.6, p1.x + inward.x * 0.6];
+        const zs = [p0.z, p1.z, p0.z + inward.z * 0.6, p1.z + inward.z * 0.6];
+        mb.box(Math.min(...xs), 0, Math.min(...zs), Math.max(...xs), 0.8, Math.max(...zs), i % 2 ? COLORS.curbA : COLORS.curbB, SURF.WALL);
+      }
+      return;
+    }
+    // dashes along the edge, inset 0.3..0.9 m
+    const a = q[3], b = q[2];                      // top edge, from a to b
+    const inward = V(-a.x - b.x, 0, -a.z - b.z).normalize();
+    const dashes = 8;
+    for (let d = 0; d < dashes; d++) {
+      const p0 = V().lerpVectors(a, b, d / dashes), p1 = V().lerpVectors(a, b, (d + 1) / dashes);
+      const o0 = V().copy(p0).addScaledVector(inward, 0.3), o1 = V().copy(p1).addScaledVector(inward, 0.3);
+      const i0 = V().copy(p0).addScaledVector(inward, 0.9), i1 = V().copy(p1).addScaledVector(inward, 0.9);
+      for (const v of [o0, o1, i0, i1]) v.y = 0.02;
+      const col = d % 2 ? OPEN.edgeA : OPEN.edgeB;
+      // winding so the quad faces up
+      const nrm = V().subVectors(o1, o0).cross(V().subVectors(i1, o1));
+      if (nrm.y > 0) mb.quad(o0, o1, i1, i0, col); else mb.quad(o0, i0, i1, o1, col);
+    }
+  });
+}
+
+function hazardBlock(mb, x0, y0, z0, x1, y1, z1, color, bands = 0) {
+  mb.box(x0, y0, z0, x1, y1, z1, color, SURF.WALL);
+  // thin striped band near the bottom (visual)
+  if (bands) {
+    const e = 0.04, hb = Math.min(1.2, (y1 - y0) * 0.3);
+    const cols = [OPEN.hazardA, OPEN.hazardB];
+    for (let i = 0; i < bands; i++) {
+      const ya = y0 + 0.2 + i * hb / bands, yb = ya + hb / bands;
+      mb.box(x0 - e, ya, z0 - e, x1 + e, yb, z1 + e, cols[i % 2]);
+    }
+  }
+}
+
+function cone(mb, x, z, s = 1) {
+  const r = 0.5 * s, hgt = 1.1 * s, segs = 6;
+  mb.box(x - r * 1.2, 0, z - r * 1.2, x + r * 1.2, 0.12 * s, z + r * 1.2, 0x23272f, SURF.WALL);
+  const apex = V(x, hgt, z);
+  for (let i = 0; i < segs; i++) {
+    const a0 = (i / segs) * Math.PI * 2, a1 = ((i + 1) / segs) * Math.PI * 2;
+    const p0 = V(x + Math.cos(a0) * r, 0.12 * s, z + Math.sin(a0) * r), p1 = V(x + Math.cos(a1) * r, 0.12 * s, z + Math.sin(a1) * r);
+    const m0 = V().lerpVectors(p0, apex, 0.45), m1 = V().lerpVectors(p1, apex, 0.45);
+    const n0 = V().lerpVectors(p0, apex, 0.62), n1 = V().lerpVectors(p1, apex, 0.62);
+    mb.quad(p1, p0, m0, m1, 0xff7a1a, SURF.WALL);
+    mb.quad(m1, m0, n0, n1, 0xf4f6fa, SURF.WALL);
+    mb.tri(n1, n0, apex, 0xff7a1a, SURF.WALL);
+  }
+}
+
+function bump(mb, zc) {
+  // speed bump across the whole tile (drivable)
+  const h = T / 2, l = 1.4, ht = 0.32;
+  const prof = [[zc - l, 0], [zc - l * 0.35, ht], [zc + l * 0.35, ht], [zc + l, 0]];
+  for (let i = 0; i < prof.length - 1; i++) {
+    const [za, ya] = prof[i], [zb, yb] = prof[i + 1];
+    const n = 8;
+    for (let k = 0; k < n; k++) {
+      const x0 = -h + (T * k) / n, x1 = x0 + T / n;
+      mb.quad(V(x0, ya, za), V(x0, yb, zb), V(x1, yb, zb), V(x1, ya, za), k % 2 ? OPEN.hazardA : OPEN.hazardB, SURF.ROAD);
+    }
+  }
+}
+
+function plazaDef(name, obstacle = null, extra = {}) {
+  return {
+    name,
+    conns: PLAZA_CONNS,
+    build: (mb, mask, rail) => { buildPlazaFloor(mb, mask, rail); if (obstacle) obstacle(mb); },
+    cells: extra.cells || [[0, 0, 0]],
+    routePath: extra.routePath || null,
+    supports: [{ x: 0, z: 0, y: 0 }],
+  };
+}
+
+const OPEN_DEFS = [
+  { id: 'plaza', ...plazaDef('Open floor') },
+  { id: 'plazaPillar', ...plazaDef('Pillar', (mb) => hazardBlock(mb, -2, 0, -2, 2, 7, 2, OPEN.concrete, 4), { cells: [[0, 0, 0], [0, 0, 1]] }) },
+  {
+    id: 'plazaWall',
+    ...plazaDef('Barrier', (mb) => {
+      for (let i = 0; i < 4; i++) {
+        const x0 = -9.6 + i * 1.8;
+        mb.box(x0, 0, -0.7, x0 + 1.8, 1.2, 0.7, i % 2 ? COLORS.curbB : COLORS.curbA, SURF.WALL);
+      }
+    }),
+  },
+  {
+    id: 'plazaCones',
+    ...plazaDef('Cones', (mb) => {
+      for (const [x, z] of [[-6, -4], [-7.2, -2.2], [-5, -2.4], [6, 3], [7.2, 4.8], [5, 5]]) cone(mb, x, z);
+    }),
+  },
+  { id: 'plazaBumps', ...plazaDef('Speed bumps', (mb) => { bump(mb, -5); bump(mb, 5); }) },
+  {
+    id: 'plazaJump',
+    ...plazaDef('Jump wedge', (mb) => {
+      const x0 = -4, x1 = 4, z0 = -7, z1 = 1, H = 1.5, n = 4;
+      for (let k = 0; k < n; k++) {
+        const za = z0 + (z1 - z0) * k / n, zb = z0 + (z1 - z0) * (k + 1) / n;
+        const ya = H * k / n, yb = H * (k + 1) / n;
+        mb.quad(V(x0, ya, za), V(x0, yb, zb), V(x1, yb, zb), V(x1, ya, za), k % 2 ? COLORS.boostA : COLORS.boostB, SURF.ROAD);
+      }
+      mb.quad(V(x0, 0, z1), V(x1, 0, z1), V(x1, H, z1), V(x0, H, z1), COLORS.side, SURF.WALL);
+      mb.tri(V(x1, 0, z1), V(x1, 0, z0), V(x1, H, z1), COLORS.side, SURF.WALL);
+      mb.tri(V(x0, 0, z0), V(x0, 0, z1), V(x0, H, z1), COLORS.side, SURF.WALL);
+    }, { routePath: [[0, 0, -10], [0, 0, -7], [0, 0.75, -3], [0, 1.5, 1], [0, 0, 10]] }),
+  },
+];
+
 // Order matters: indices are used in the share-code format.
 const DEFS = [
   { id: 'start', name: 'Start', conns: STRAIGHT_CONNS, ribbons: () => [straightRibbon()], gate: { kind: 'start', z: 4 }, spawn: { z: -5 } },
@@ -173,6 +319,7 @@ const DEFS = [
   { id: 'wallR', name: 'Wall ride R', ...rollDef(6, (t) => (-Math.PI / 2) * plateau(t, 0.33)) },
   { id: 'corkscrew', name: 'Corkscrew', ...rollDef(7, (t) => 2 * Math.PI * ease(t)) },
   { id: 'inverted', name: 'Upside down', ...rollDef(8, (t) => Math.PI * plateau(t, 0.32)) },
+  ...OPEN_DEFS,
 ];
 
 export const PIECE_ORDER = DEFS.map((d) => d.id);
@@ -204,9 +351,10 @@ function sampleRibbon(rib, segs = rib.segs) {
   return frames;
 }
 
+// Cross-section edges. Curb heights are the symbol 'C' so they can taper.
 function profileEdges(rib) {
   const H = ROAD_HALF, inner = H - CURB_W, roadIn = inner - LINE_W, D = DECK_T;
-  const ch = rib.curb ?? 0.9;
+  const ch = 'C';
   const e = [];
   e.push([H, -D, H, ch, 'side']);
   e.push([H, ch, inner, ch, 'curbTop']);
@@ -246,31 +394,49 @@ function edgeStyle(kind, stripe) {
 
 const P = (f, s, h) => V().copy(f.p).addScaledVector(f.l, s).addScaledVector(f.u, h);
 
-function buildRibbon(mb, rib, frames, capStart, capEnd) {
+const TAPER = 4; // metres over which barriers ramp down where a road opens onto open floor
+
+function buildRibbon(mb, rib, frames, capStart, capEnd, taperStart = false, taperEnd = false) {
   const edges = profileEdges(rib);
+  const curb = rib.curb ?? 0.9;
+  const len = frames[frames.length - 1].s;
+  const chAt = (f) => {
+    let k = 1;
+    if (taperStart) k = Math.min(k, f.s / TAPER);
+    if (taperEnd) k = Math.min(k, (len - f.s) / TAPER);
+    return curb * Math.max(0, Math.min(1, k));
+  };
+  const hv = (h, f) => (h === 'C' ? chAt(f) : h);
   for (let i = 0; i < frames.length - 1; i++) {
     const f0 = frames[i], f1 = frames[i + 1];
     const stripe = i % 2 === 0;
     for (const [s0, h0, s1, h1, kind] of edges) {
       const [color, surf] = edgeStyle(kind, stripe);
-      mb.quad(P(f0, s0, h0), P(f0, s1, h1), P(f1, s1, h1), P(f1, s0, h0), color, surf);
+      const a = P(f0, s0, hv(h0, f0)), b = P(f0, s1, hv(h1, f0)), c = P(f1, s1, hv(h1, f1)), d = P(f1, s0, hv(h0, f1));
+      if (a.distanceToSquared(b) < 1e-6 && c.distanceToSquared(d) < 1e-6) continue; // fully tapered away
+      mb.quad(a, b, c, d, color, surf);
     }
   }
-  const H = ROAD_HALF, inner = H - CURB_W, D = DECK_T, ch = rib.curb ?? 0.9;
+  if (taperStart) capStart = capStart ? true : null;
+  if (taperEnd) capEnd = capEnd ? true : null;
+  const H = ROAD_HALF, inner = H - CURB_W, D = DECK_T, ch = curb;
   const blocks = [
     [[H, -D], [H, ch], [inner, ch], [inner, -D]],
     [[inner, -D], [inner, 0], [-inner, 0], [-inner, -D]],
     [[-inner, -D], [-inner, ch], [-H, ch], [-H, -D]],
   ];
-  const cap = (f, reverse) => {
-    for (const b of blocks) {
+  // curb ends are always closed; the deck itself only where nothing connects
+  const cap = (f, reverse, slab, curbs = true) => {
+    blocks.forEach((b, i) => {
+      if (i === 1 && !slab) return;
+      if (i !== 1 && !curbs) return;
       const pts = b.map(([s, h]) => P(f, s, h));
       if (reverse) pts.reverse();
       mb.quad(pts[0], pts[1], pts[2], pts[3], COLORS.side, SURF.WALL);
-    }
+    });
   };
-  if (capStart) cap(frames[0], true);
-  if (capEnd) cap(frames[frames.length - 1], false);
+  if (capStart !== null) cap(frames[0], true, capStart, !taperStart);
+  if (capEnd !== null) cap(frames[frames.length - 1], false, capEnd, !taperEnd);
 }
 
 function buildBoostArrows(mb, frames) {
@@ -324,18 +490,47 @@ export function pieceData(id) {
   let d = cache.get(id);
   if (d) return d;
   const def = PIECES[id];
+  const fullMask = (1 << def.conns.length) - 1;
+  const variantCache = new Map();
+  if (def.build) {
+    // custom geometry (open areas)
+    d = {
+      def,
+      fullMask,
+      // rail: raised tiles get safety rails on open edges
+      variant(mask, taper = 0, rail = false) {
+        const key = mask | (rail ? 1 << 8 : 0);
+        let v = variantCache.get(key);
+        if (!v) { const mb = new MeshBuilder(); def.build(mb, mask, rail); v = mb.toData(); variantCache.set(key, v); }
+        return v;
+      },
+      glow: null,
+      supports: def.supports || [],
+      cells: def.cells,
+      route: null,
+      gate: null,
+    };
+    cache.set(id, d);
+    return d;
+  }
   const ribbons = def.ribbons();
   const frameSets = ribbons.map((r) => sampleRibbon(r));
-  const variants = [];
-  for (let mask = 0; mask < 4; mask++) {
-    const mb = new MeshBuilder();
-    ribbons.forEach((rib, i) => {
-      const capS = i === 0 && (mask & 1) !== 0;
-      const capE = i === ribbons.length - 1 && (mask & 2) !== 0;
-      buildRibbon(mb, rib, frameSets[i], capS, capE);
-    });
-    variants.push(mb.toData());
-  }
+  // mask: ends with nothing attached (deck gets capped); taper: ends that open onto open floor
+  const variant = (mask, taper = 0) => {
+    const key = mask | (taper << 4);
+    let v = variantCache.get(key);
+    if (!v) {
+      const mb = new MeshBuilder();
+      ribbons.forEach((rib, i) => {
+        const capS = i === 0 ? (mask & 1) !== 0 : null;
+        const capE = i === ribbons.length - 1 ? (mask & 2) !== 0 : null;
+        buildRibbon(mb, rib, frameSets[i], capS, capE, i === 0 && (taper & 1) !== 0, i === ribbons.length - 1 && (taper & 2) !== 0);
+      });
+      v = mb.toData();
+      variantCache.set(key, v);
+    }
+    return v;
+  };
   let glow = null;
   if (ribbons.some((r) => r.boost)) {
     const mb = new MeshBuilder();
@@ -388,7 +583,8 @@ export function pieceData(id) {
   });
   d = {
     def,
-    variants,
+    fullMask,
+    variant,
     glow,
     supports,
     cells,
@@ -397,6 +593,31 @@ export function pieceData(id) {
   };
   cache.set(id, d);
   return d;
+}
+
+// Route samples through an open-area tile, from connector `entry` to `exit`.
+// Connector order: 0 back (-z), 1 front (+z), 2 left (+x), 3 right (-x).
+const EDGE_MID = [V(0, 0, -T / 2), V(0, 0, T / 2), V(T / 2, 0, 0), V(-T / 2, 0, 0)];
+export function openRoute(def, entry, exit) {
+  const pts = [];
+  if (def.routePath && entry === 0 && exit === 1) {
+    for (const [x, y, z] of def.routePath) pts.push(V(x, y, z));
+  } else if (def.routePath && entry === 1 && exit === 0) {
+    for (const [x, y, z] of [...def.routePath].reverse()) pts.push(V(x, y, z));
+  } else if ((entry ^ 1) === exit) {
+    const a = EDGE_MID[entry], b = EDGE_MID[exit];
+    for (let i = 0; i <= 8; i++) pts.push(V().lerpVectors(a, b, i / 8));
+  } else {
+    // quarter circle around the shared corner
+    const a = EDGE_MID[entry], b = EDGE_MID[exit];
+    const corner = V(a.x + b.x, 0, a.z + b.z);
+    const ra = V().subVectors(a, corner), rb = V().subVectors(b, corner);
+    for (let i = 0; i <= 10; i++) {
+      const t = (i / 10) * Math.PI / 2;
+      pts.push(V().copy(corner).addScaledVector(ra, Math.cos(t)).addScaledVector(rb, Math.sin(t)));
+    }
+  }
+  return pts.map((p) => ({ p, u: V(0, 1, 0) }));
 }
 
 // Rotate a local tile offset by r quarter turns (matches Matrix4.makeRotationY(r*PI/2)).
