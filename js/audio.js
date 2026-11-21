@@ -155,6 +155,13 @@ export class AudioFX {
     src.start(t); src.stop(t + 0.3);
   }
 
+  stunt() {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    this._tone(523, t, 0.12, { type: 'triangle', gain: 0.12, slide: 260 });
+    this._tone(784, t + 0.07, 0.2, { type: 'triangle', gain: 0.11, slide: 400 });
+  }
+
   click() {
     if (!this.ctx) return;
     this._tone(660, this.ctx.currentTime, 0.06, { type: 'triangle', gain: 0.08 });

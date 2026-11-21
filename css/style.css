@@ -356,6 +356,29 @@ body.touch .desktop-only { display: none !important; }
 #race-toast.show { opacity: 1; }
 #race-toast .faster { color: #49e08d; }
 #race-toast .slower { color: #ff6b6b; }
+#stunt {
+  position: absolute;
+  left: 50%;
+  top: 30%;
+  transform: translateX(-50%);
+  font-weight: 900;
+  font-style: italic;
+  font-size: clamp(26px, 5vw, 46px);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  color: var(--accent-2);
+  text-shadow: 0 3px 0 rgba(0, 0, 0, 0.35), 0 0 26px rgba(0, 0, 0, 0.45);
+  opacity: 0;
+  pointer-events: none;
+}
+#stunt.show { animation: stunt 1.4s ease-out forwards; }
+@keyframes stunt {
+  0% { opacity: 0; transform: translateX(-50%) scale(1.5); }
+  12% { opacity: 1; transform: translateX(-50%) scale(1); }
+  75% { opacity: 1; transform: translateX(-50%) scale(1); }
+  100% { opacity: 0; transform: translateX(-50%) translateY(-16px) scale(0.96); }
+}
 #flip-hint {
   position: absolute;
   left: 50%;

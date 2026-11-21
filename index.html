@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
   <meta name="theme-color" content="#0d1424">
-  <meta name="description" content="Stuntrun is a low-poly 3D stunt racing game for the browser: loops, jumps, banked turns, ghosts and a track editor. Plays on desktop and mobile.">
+  <meta name="description" content="Stuntrun is a low-poly 3D stunt racing game for the browser: wall rides, upside-down driving, corkscrews, loops, big jumps, ghosts and a track editor. Plays on desktop and mobile.">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -30,7 +30,7 @@
     <section id="menu" class="screen">
       <div class="menu-wrap">
         <div class="logo big"><span>STUNT</span><span>RUN</span></div>
-        <p class="tagline">Low-poly stunt racing. Beat the clock, chase your ghost.</p>
+        <p class="tagline">Ride walls, drive upside down, fly over gaps. Beat the clock and chase your ghost.</p>
         <nav class="menu-buttons">
           <button class="btn primary" data-action="play">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>Play
@@ -89,6 +89,7 @@
       <div class="hud-speed"><span id="hud-speed">0</span><small id="hud-unit">km/h</small></div>
       <div id="countdown" aria-live="assertive"></div>
       <div id="race-toast" aria-live="polite"></div>
+      <div id="stunt" aria-hidden="true"></div>
       <div id="flip-hint">Stuck? <span class="desktop-only">Press <kbd>Enter</kbd> to respawn</span><span class="touch-only">Tap ↺ to respawn</span></div>
       <div id="touch" class="touch-controls">
         <div class="touch-cluster left">

@@ -24,7 +24,12 @@ export const CAR = {
   brake: 26,
   coast: 1.4,
   drag: 0.00055,
-  downforce: 0.006,
+  downforce: 0.004,
+  downforceMax: 9,
+  bounceLimit: 1.5,       // m/s away from the track allowed while stuck to it
+  stickMin: 10,           // m/s where adhesion starts
+  stickMax: 26,           // m/s where adhesion is full
+  stickPress: 7,          // extra m/s^2 pressing the car onto the track at speed
   gripLat: 2.3,
   gripLong: 1.6,
   grassGrip: 0.75,
@@ -36,6 +41,14 @@ export const CAR = {
   yawAssist: 4,
   antiRoll: 30000,
   airRollDamp: 2.5,
+  airPitchAlign: 2.2,
+  alignRate: 12,          // 1/s, how hard the body is turned onto the track surface
+  alignDamp: 30,          // 1/s, how quickly pitch/roll rates follow the track
+  snapRate: 18,           // 1/s, direct orientation snap at full adhesion
+  stickGrace: 0.25,       // s, adhesion keeps working after the wheels lose contact
+  graceProbe: 2.4,        // m, how close the track must be for the grace pull
+  overspeed: 60,          // m/s above which extra drag kicks in
+  overspeedDrag: 1.2,     // m/s^2 of extra drag per m/s over
 };
 
 export const WHEELS = [
@@ -57,7 +70,8 @@ const SPHERES = [
 const _up = new Vector3(), _fwd = new Vector3(), _left = new Vector3();
 const _m = new Vector3(), _r = new Vector3(), _v = new Vector3(), _t = new Vector3();
 const _wf = new Vector3(), _ws = new Vector3(), _n = new Vector3(), _pc = new Vector3(), _j = new Vector3();
-const _qi = new Quaternion(), _dq = new Quaternion();
+const _na = new Vector3();
+const _qi = new Quaternion(), _dq = new Quaternion(), _sq = new Quaternion(), _sq2 = new Quaternion();
 const _hit = { nx: 0, ny: 0, nz: 0, surf: 0 };
 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -85,6 +99,12 @@ export class CarPhysics {
     this.boostTouched = false;
     this.impact = 0;
     this.airTime = 0;
+    this.adhesion = 0;
+    this.surfaceNormal = new Vector3(0, 1, 0);
+    this.prevNormal = new Vector3(0, 1, 0);
+    this.surfaceRate = new Vector3();
+    this.hadNormal = false;
+    this.stickTimer = 0;
   }
 
   reset(pos, quat, vel = null, angVel = null) {
@@ -97,6 +117,9 @@ export class CarPhysics {
     this.steer = 0;
     this.boostTimer = 0;
     this.airTime = 0;
+    this.hadNormal = false;
+    this.stickTimer = 0;
+    this.surfaceRate.set(0, 0, 0);
     for (const w of this.wheels) { w.contact = false; w.comp = 0; w.load = 0; }
   }
 
@@ -214,10 +237,60 @@ export class CarPhysics {
       this._impulse(_j, _r);
     }
 
-    // --- downforce keeps the car planted in loops and at speed
-    if (grounded >= 2) {
-      const df = p.downforce * this.speed * this.speed;
-      this.vel.addScaledVector(_up, -df * dt);
+    // --- adhesion: at speed the tyres stick to the track, so the car can ride
+    // walls and drive upside down. It cancels the part of gravity that pulls the
+    // car off the surface and adds some extra press (plus aero downforce).
+    this.adhesion = 0;
+    const u = clamp((this.speed - p.stickMin) / (p.stickMax - p.stickMin), 0, 1);
+    const fSpeed = u * u * (3 - 2 * u);
+    let graceOk = false;
+    if (grounded < 2 && this.stickTimer > 0 && this.hadNormal) {
+      this.stickTimer -= dt;
+      // only if track is still right below us (twisting road, bump) – not after a jump lip
+      const d = this.world.raycast(this.pos.x, this.pos.y, this.pos.z, -this.surfaceNormal.x, -this.surfaceNormal.y, -this.surfaceNormal.z, p.graceProbe, _hit);
+      graceOk = d >= 0 && _hit.surf !== SURF.GRASS;
+    }
+    if (graceOk) {
+      // grace period: the wheels just lost the track, keep pulling the car back onto it
+      _na.copy(this.surfaceNormal);
+      const gAway = Math.max(0, -p.gravity * _na.y);
+      this.vel.addScaledVector(_na, -fSpeed * (gAway + p.stickPress * 2) * dt);
+      this.adhesion = fSpeed;
+    } else if (grounded >= 2) {
+      _na.set(0, 0, 0);
+      for (const w of this.wheels) if (w.contact) _na.add(w.n);
+      _na.normalize();
+      this.surfaceNormal.copy(_na);
+      const f = fSpeed;
+      this.stickTimer = f > 0.3 ? p.stickGrace : 0;
+      const gAway = Math.max(0, -p.gravity * _na.y);
+      const a = f * (gAway + p.stickPress) + Math.min(p.downforceMax, p.downforce * this.speed * this.speed);
+      this.adhesion = f;
+      this.vel.addScaledVector(_na, -a * dt);
+      // magnetic: at speed the car can't bounce away from the track surface
+      const vn = this.vel.dot(_na);
+      if (vn > p.bounceLimit) this.vel.addScaledVector(_na, -(vn - p.bounceLimit) * f);
+
+      // surface alignment: turn the body (pitch/roll only) to match the track,
+      // including how fast the track itself is rotating (loops, rolls, walls)
+      if (this.hadNormal) {
+        _t.crossVectors(this.prevNormal, _na).multiplyScalar(1 / dt);
+        this.surfaceRate.lerp(_t, 1 - Math.exp(-dt / 0.035));
+      } else {
+        this.surfaceRate.set(0, 0, 0);
+      }
+      this.prevNormal.copy(_na);
+      this.hadNormal = true;
+      const strength = 0.3 + 0.7 * f;
+      _v.copy(this.surfaceRate).addScaledVector(_up, -this.surfaceRate.dot(_up));   // desired = track rate
+      _t.crossVectors(_up, _na);                                                      // orientation error
+      _v.addScaledVector(_t, p.alignRate);
+      const wUp = this.angVel.dot(_up);
+      _t.copy(this.angVel).addScaledVector(_up, -wUp);                                // current pitch/roll rate
+      this.angVel.addScaledVector(_v.sub(_t), Math.min(1, p.alignDamp * dt) * strength);
+    } else if (this.stickTimer <= 0) {
+      this.hadNormal = false;
+      this.stickTimer = 0;
     }
 
     // --- drive / brake forces
@@ -312,14 +385,21 @@ export class CarPhysics {
       this.boostTimer -= dt;
     }
 
-    // --- aerodynamic drag
-    this.vel.addScaledVector(this.vel, -p.drag * this.speed * dt);
+    // --- aerodynamic drag (stronger above the top speed so boosts/descents stay sane)
+    const over = Math.max(0, this.speed - p.overspeed);
+    this.vel.addScaledVector(this.vel, -(p.drag * this.speed + over * p.overspeedDrag / Math.max(1, this.speed)) * dt);
 
     // --- air control / damping
     if (grounded === 0) {
       this.airTime += dt;
       this.angVel.addScaledVector(_up, -target * p.airYaw * dt);
       this.angVel.multiplyScalar(1 - 0.5 * dt);
+      // gently point the nose along the flight path so landings are cleaner
+      if (this.airTime > 0.15 && this.speed > 10) {
+        _v.copy(this.vel).multiplyScalar(1 / this.speed);
+        const e = _t.crossVectors(_fwd, _v).dot(_left);
+        if (_fwd.dot(_v) > 0.3) this.angVel.addScaledVector(_left, e * p.airPitchAlign * dt);
+      }
       // damp roll in the air so jumps stay readable
       const roll = this.angVel.dot(_fwd);
       this.angVel.addScaledVector(_fwd, -roll * Math.min(1, p.airRollDamp * dt));
@@ -339,6 +419,15 @@ export class CarPhysics {
     const wx = this.angVel.x * dt * 0.5, wy = this.angVel.y * dt * 0.5, wz = this.angVel.z * dt * 0.5;
     _dq.set(wx, wy, wz, 0).multiply(q);
     q.set(q.x + _dq.x, q.y + _dq.y, q.z + _dq.z, q.w + _dq.w).normalize();
+
+    // at speed the body snaps onto the track surface (pitch/roll), which keeps
+    // fast rolls, walls and loops stable
+    if (this.hadNormal && this.adhesion > 0.2 && (grounded >= 2 || this.stickTimer > 0)) {
+      _up.set(0, 1, 0).applyQuaternion(q);
+      _sq.setFromUnitVectors(_up, this.surfaceNormal);
+      _sq2.identity().slerp(_sq, Math.min(1, p.snapRate * this.adhesion * dt));
+      q.premultiply(_sq2).normalize();
+    }
 
     this.impact = 0;
     this._collide();

@@ -227,7 +227,8 @@ class Game {
   }
 
   startAttract() {
-    const def = CAMPAIGN[0];
+    // the menu demo lap shows off the stunt finale
+    const def = CAMPAIGN.find((t) => t.id === 'grand-stunt') || CAMPAIGN[0];
     const track = this.loadTrack(def);
     const route = computeRoute(def);
     const race = new Race(track);
@@ -432,6 +433,7 @@ class Game {
     s.recorder.reset();
     s.ghost = s.ghostData && this.settings.ghost ? new GhostPlayer(s.ghostData) : null;
     s.phase = 'countdown';
+    s.stunt = null;
     s.countdown = 2.4;
     s.lastBeat = 4;
     s.prevPos.copy(s.race.car.pos);
@@ -712,6 +714,34 @@ class Game {
     }
   }
 
+  stuntCallout(text) {
+    const el = $('#stunt');
+    el.textContent = text;
+    el.classList.remove('show');
+    void el.offsetWidth;
+    el.classList.add('show');
+    this.audio.stunt();
+  }
+
+  // Detects big air, wall rides and upside-down driving (uses _up of the car).
+  updateStunts(s, car, dt) {
+    const st = s.stunt || (s.stunt = { air: 0, inv: 0, wall: 0, invShown: false, wallShown: false });
+    const onTrack = car.grounded >= 2;
+    st.air = Math.max(st.air, car.airTime);
+    if (onTrack && st.air > 0) {
+      if (st.air > 1.1) this.stuntCallout(`Big air ${st.air.toFixed(1)}s`);
+      st.air = 0;
+    }
+    if (onTrack && _up.y < -0.6) {
+      st.inv += dt;
+      if (st.inv > 0.35 && !st.invShown) { st.invShown = true; this.stuntCallout('Upside down!'); }
+    } else if (_up.y > 0.3) { st.inv = 0; st.invShown = false; }
+    if (onTrack && Math.abs(_up.y) < 0.35) {
+      st.wall += dt;
+      if (st.wall > 0.45 && !st.wallShown && !st.invShown) { st.wallShown = true; this.stuntCallout('Wall ride!'); }
+    } else if (_up.y > 0.7) { st.wall = 0; st.wallShown = false; }
+  }
+
   // ------------------------------------------------------------------ main loop
   frame(now) {
     requestAnimationFrame(this.frame);
@@ -811,9 +841,12 @@ class Game {
     const inp = input || { throttle: 0 };
     this.audio.updateEngine(car.speed, s.phase === 'racing' ? inp.throttle : 0, car.slip, car.grounded, car.boostTimer > 0);
 
-    // stuck / upside down hint
+    // stunt callouts
     _up.set(0, 1, 0).applyQuaternion(car.quat);
-    const stuck = s.phase === 'racing' && (_up.y < 0.25 || (car.speed < 1.5 && car.grounded < 2));
+    if (s.phase === 'racing') this.updateStunts(s, car, dt);
+
+    // stuck / upside down hint
+    const stuck = s.phase === 'racing' && car.speed < 3 && (car.grounded < 2 || _up.y < 0.25);
     this.flipTimer = stuck ? this.flipTimer + dt : 0;
     $('#flip-hint').classList.toggle('show', this.flipTimer > 1.5);
 

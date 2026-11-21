@@ -130,6 +130,16 @@ export class Editor {
     this.saveDraft();
   }
 
+  // returns null when the piece fits, otherwise a reason
+  placeError(piece) {
+    for (const c of worldCells(piece)) {
+      if (c[2] < 0) return 'Build this piece higher – use ▲ (it needs room below)';
+      const owner = this.cellOwner.get(c.join(','));
+      if (owner !== undefined && !(piece.type === 'start' && this.pieces[owner].type === 'start')) return 'That spot is taken';
+    }
+    return null;
+  }
+
   canPlace(piece) {
     for (const c of worldCells(piece)) {
       if (c[2] < 0) return false;
@@ -145,7 +155,8 @@ export class Editor {
 
   place(tx, tz) {
     const piece = { type: this.tool, x: tx, y: this.level, z: tz, r: this.rot };
-    if (!this.canPlace(piece)) { this.game.toast('That spot is taken'); return; }
+    const err = this.placeError(piece);
+    if (err) { this.game.toast(err); return; }
     this.snapshot();
     if (piece.type === 'start') this.pieces = this.pieces.filter((p) => p.type !== 'start');
     this.pieces.push(piece);

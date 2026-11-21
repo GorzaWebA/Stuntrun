@@ -198,7 +198,9 @@ export function computeRoute(def) {
 //   L1 L2 L3 / R1 R2 R3   flat turns (tight / normal / wide)
 //   BL2 BR2 BL3 BR3       banked turns
 //   U D (ramp up/down 1 level), U2 D2 (steep, 2 levels)
-//   K jump kicker, G gap (skip a tile), OL OR loops (exit shifts left/right)
+//   K jump kicker, BK big jump, G gap (skip a tile), OL OR loops (exit shifts left/right)
+//   WL2 WR2 WL3 WR3 wall turns (near-vertical banking)
+//   VL VR wall rides, CS corkscrew, INV upside-down section (need level >= 2)
 export function buildFromScript(script, opts = {}) {
   let x = opts.x ?? 0, z = opts.z ?? 0, y = opts.y ?? 0, d = opts.d ?? 0;
   const pieces = [];
@@ -222,6 +224,8 @@ export function buildFromScript(script, opts = {}) {
     BL2: ['bank2', 0], BR2: ['bank2', 1], BL3: ['bank3', 0], BR3: ['bank3', 1],
     U: ['ramp', 0], D: ['ramp', 1], U2: ['ramp2', 0], D2: ['ramp2', 1],
     K: ['kicker', 0], OL: ['loopL', 0], OR: ['loopR', 0],
+    BK: ['bigkick', 0], WL2: ['wall2', 0], WR2: ['wall2', 1], WL3: ['wall3', 0], WR3: ['wall3', 1],
+    VL: ['wallL', 0], VR: ['wallR', 0], CS: ['corkscrew', 0], INV: ['inverted', 0],
   };
   place('start', 0);
   for (const raw of script.trim().split(/\s+/)) {
@@ -245,7 +249,8 @@ export function findOverlaps(pieces) {
   pieces.forEach((p, i) => {
     for (const c of worldCells(p)) {
       const k = c.join(',');
-      if (owner.has(k) && owner.get(k) !== i) clashes.push([owner.get(k), i, k]);
+      if (c[2] < 0) clashes.push([i, i, `${k} (below ground)`]);
+      else if (owner.has(k) && owner.get(k) !== i) clashes.push([owner.get(k), i, k]);
       else owner.set(k, i);
     }
   });

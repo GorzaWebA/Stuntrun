@@ -66,12 +66,12 @@ export class ChaseCamera {
       this._applyFov(p.fov);
       return;
     }
-    const grounded = phys.grounded >= 2;
+    const grounded = phys.grounded >= 2 || phys.stickTimer > 0;
     _fwd.set(0, 0, 1).applyQuaternion(quat);
     _up.set(0, 1, 0).applyQuaternion(quat);
     // up vector: follow the car on the road (loops, banks), world up in the air
     const desiredUp = grounded ? _up : WORLD_UP;
-    this.up.lerp(desiredUp, 1 - Math.exp(-(grounded ? 3.2 : 1.6) * dt)).normalize();
+    this.up.lerp(desiredUp, 1 - Math.exp(-(grounded ? 5 : 1.6) * dt)).normalize();
     // forward: car heading, or travel direction while airborne
     if (!grounded && phys.speed > 8) {
       _v.copy(phys.vel).normalize();

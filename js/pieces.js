@@ -11,6 +11,9 @@ const T = TILE;
 const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
 const smooth = (u) => u * u * (3 - 2 * u);
 const clamp01 = (u) => Math.max(0, Math.min(1, u));
+// jerk-free easing (smootherstep) so rolls and banks start and end gently
+const ease = (u) => { const x = clamp01(u); return x * x * x * (x * (6 * x - 15) + 10); };
+const plateau = (t, e) => ease(t / e) * ease((1 - t) / e);
 
 // Directions: 0:+Z 1:+X 2:-Z 3:-X
 export const DIR_X = [0, 1, 0, -1];
@@ -43,18 +46,28 @@ function turnDef(N) {
   };
 }
 
-function bankDef(N, bankDeg) {
+const HEART = 0.95; // height of the car's centre above the road
+
+function bankDef(N, bankDeg, wall = false) {
   const R = (N - 0.5) * T;
   const bmax = bankDeg * Math.PI / 180;
-  const bank = (t) => bmax * Math.sin(Math.PI * t);
+  // Banked turns pivot on the inner edge and bank with a sine. Wall turns bank up
+  // over the first 40% and hold, pivoting around the driver (the car's path
+  // stays level), so they need to be built at least two levels up.
+  const bank = wall ? (t) => bmax * plateau(t, 0.4) : (t) => bmax * Math.sin(Math.PI * t);
   return {
     conns: [{ x: 0, z: 0, y: 0, d: 2 }, { x: N - 1, z: N - 1, y: 0, d: 1 }],
     ribbons: () => [{
-      segs: [0, 10, 22, 32][N],
+      segs: [0, 12, 26, 38][N],
+      lanes: 6,
       curb: 1.0,
       pos: (t, o) => {
-        const a = t * Math.PI / 2;
-        return o.set(R - R * Math.cos(a), (ROAD_HALF + 0.2) * Math.sin(bank(t)), -T / 2 + R * Math.sin(a));
+        const a = t * Math.PI / 2, b = bank(t);
+        if (wall) {
+          const k = HEART * Math.sin(b);
+          return o.set(R - R * Math.cos(a) - Math.cos(a) * k, HEART * (1 - Math.cos(b)), -T / 2 + R * Math.sin(a) + Math.sin(a) * k);
+        }
+        return o.set(R - R * Math.cos(a), (ROAD_HALF + 0.2) * Math.sin(b), -T / 2 + R * Math.sin(a));
       },
       up: (t, o) => {
         const a = t * Math.PI / 2, b = bank(t);
@@ -85,6 +98,7 @@ function loopDef(side) {
       lineRibbon(0, 0, -T / 2, 0, 0, zc, { segs: 8 }),
       {
         segs: 60,
+        lanes: 4,
         curb: 1.3,
         supports: false,
         pos: (t, o) => {
@@ -98,6 +112,39 @@ function loopDef(side) {
       },
       lineRibbon(side * T, 0, zc, side * T, 0, 1.5 * T, { segs: 8 }),
     ],
+  };
+}
+
+
+// Heartline roll: the road twists around an axis at the driver's height, so
+// the car keeps going straight while the world turns around it. Used for wall
+// rides (90°), corkscrews (360°) and upside-down sections (180°).
+function rollDef(len, angle) {
+  return {
+    conns: [{ x: 0, z: 0, y: 0, d: 2 }, { x: 0, z: len - 1, y: 0, d: 0 }],
+    minLevel: 2,
+    ribbons: () => [{
+      segs: len * 12,
+      lanes: 8,
+      curb: 1.1,
+      supportsAt: [0.04, 0.96],
+      pos: (t, o) => {
+        const a = angle(t);
+        return o.set(HEART * Math.sin(a), HEART - HEART * Math.cos(a), -T / 2 + len * T * t);
+      },
+      up: (t, o) => {
+        const a = angle(t);
+        return o.set(-Math.sin(a), Math.cos(a), 0);
+      },
+    }],
+  };
+}
+
+function kickerDef(len, height, name) {
+  return {
+    name,
+    conns: [{ x: 0, z: 0, y: 0, d: 2 }, { x: 0, z: len - 1, y: 0, d: 0, open: true }],
+    ribbons: () => [{ segs: 10 * len, curb: 0.9, pos: (t, o) => o.set(0, height * t * t, -T / 2 + len * T * t) }],
   };
 }
 
@@ -115,13 +162,17 @@ const DEFS = [
   { id: 'bank3', name: 'Wide banked', ...bankDef(3, 32) },
   { id: 'ramp', name: 'Ramp', ...rampDef(2, 1) },
   { id: 'ramp2', name: 'Long ramp', ...rampDef(3, 2) },
-  {
-    id: 'kicker', name: 'Jump',
-    conns: [{ x: 0, z: 0, y: 0, d: 2 }, { x: 0, z: 0, y: 0, d: 0, open: true }],
-    ribbons: () => [{ segs: 10, pos: (t, o) => o.set(0, 3.2 * t * t, -T / 2 + T * t) }],
-  },
+  { id: 'kicker', ...kickerDef(1, 3.2, 'Jump') },
   { id: 'loopL', name: 'Loop left', ...loopDef(1) },
   { id: 'loopR', name: 'Loop right', ...loopDef(-1) },
+  // stunt pieces (appended to keep old share codes valid)
+  { id: 'bigkick', ...kickerDef(2, 8, 'Big jump') },
+  { id: 'wall2', name: 'Wall turn', ...bankDef(2, 75, true) },
+  { id: 'wall3', name: 'Wide wall turn', ...bankDef(3, 82, true) },
+  { id: 'wallL', name: 'Wall ride L', ...rollDef(6, (t) => (Math.PI / 2) * plateau(t, 0.33)) },
+  { id: 'wallR', name: 'Wall ride R', ...rollDef(6, (t) => (-Math.PI / 2) * plateau(t, 0.33)) },
+  { id: 'corkscrew', name: 'Corkscrew', ...rollDef(7, (t) => 2 * Math.PI * ease(t)) },
+  { id: 'inverted', name: 'Upside down', ...rollDef(8, (t) => Math.PI * plateau(t, 0.32)) },
 ];
 
 export const PIECE_ORDER = DEFS.map((d) => d.id);
@@ -161,12 +212,17 @@ function profileEdges(rib) {
   e.push([H, ch, inner, ch, 'curbTop']);
   e.push([inner, ch, inner, 0, 'curbIn']);
   e.push([inner, 0, roadIn, 0, 'line']);
+  // the road top is split into lanes so twisting surfaces stay smooth
+  const strip = (s0, s1, kind, n) => {
+    for (let i = 0; i < n; i++) e.push([s0 + (s1 - s0) * i / n, 0, s0 + (s1 - s0) * (i + 1) / n, 0, kind]);
+  };
+  const lanes = rib.lanes ?? 2;
   if (rib.boost) {
-    e.push([roadIn, 0, 4, 0, 'asphalt']);
-    e.push([4, 0, -4, 0, 'boost']);
-    e.push([-4, 0, -roadIn, 0, 'asphalt']);
+    strip(roadIn, 4, 'asphalt', 1);
+    strip(4, -4, 'boost', 2);
+    strip(-4, -roadIn, 'asphalt', 1);
   } else {
-    e.push([roadIn, 0, -roadIn, 0, 'asphalt']);
+    strip(roadIn, -roadIn, 'asphalt', lanes);
   }
   e.push([-roadIn, 0, -inner, 0, 'line']);
   e.push([-inner, 0, -inner, ch, 'curbIn']);
@@ -291,6 +347,13 @@ export function pieceData(id) {
   ribbons.forEach((rib, i) => {
     if (rib.supports === false) return;
     const fr = frameSets[i];
+    if (rib.supportsAt) {
+      for (const t of rib.supportsAt) {
+        const f = fr[Math.round(t * (fr.length - 1))];
+        if (f.u.y > 0.8) supports.push({ x: f.p.x, z: f.p.z, y: f.p.y });
+      }
+      return;
+    }
     const len = fr[fr.length - 1].s;
     const n = Math.max(1, Math.round(len / T));
     for (let k = 0; k < n; k++) {
@@ -309,7 +372,7 @@ export function pieceData(id) {
       for (let s = -ROAD_HALF + 0.5; s <= ROAD_HALF - 0.5; s += (ROAD_HALF - 0.5) / 2) {
         const p = V().copy(f.p).addScaledVector(f.l, s);
         const cx = Math.round(p.x / T), cz = Math.round(p.z / T);
-        const cy = Math.max(0, Math.floor((p.y + 0.5) / LEVEL));
+        const cy = Math.floor((p.y + 0.5) / LEVEL);
         cellSet.add(`${cx},${cz},${cy}`);
       }
     }

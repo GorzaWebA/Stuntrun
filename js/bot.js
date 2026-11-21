@@ -52,7 +52,7 @@ export class Bot {
     this.idx = best;
     this.offTrack = Math.sqrt(bestD);
     const speed = Math.max(0, car.fwdSpeed);
-    const look = 7 + speed * 0.32;
+    const look = 6 + speed * 0.2;
     const target = this._pointAt(this.s[best] + look, _d);
     _fwd.set(0, 0, 1).applyQuaternion(car.quat);
     _left.set(1, 0, 0).applyQuaternion(car.quat);
