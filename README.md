@@ -4,7 +4,9 @@
 
 It's a static site with no build step, so GitHub Pages can host it as-is.
 
-▶ **Play:** `https://gorzaweba.github.io/Stuntrun/` (once GitHub Pages is enabled, see below)
+### ▶ [Play Stuntrun](https://gorzaweba.github.io/Stuntrun/)
+
+<https://gorzaweba.github.io/Stuntrun/> (works once GitHub Pages is enabled, see below)
 
 ---
 
