@@ -112,6 +112,7 @@ class Game {
     if (!initial && prevQuality !== this.quality && this.track) this.scenery.buildDecor(this.track);
     this.audio.setEnabled(s.sound);
     this.audio.setVolume(s.volume);
+    this.audio.setMusic(s.music, s.musicVolume);
     const touch = s.touch === 'on' || (s.touch === 'auto' && this.isTouchDevice);
     document.body.classList.toggle('touch', touch);
     this.chase.setPreset(s.camera);
@@ -218,6 +219,8 @@ class Game {
     this.mode = 'menu';
     this.updateViewOffset();
     this.audio.stopEngine();
+    this.audio.setPaused(false);
+    this.audio.setMusicMode('menu');
     this.hideOverlay('pause');
     this.hideOverlay('finish');
     this.show('menu');
@@ -402,6 +405,7 @@ class Game {
     if (this.mode === 'editor') this.editor.exit();
     this.mode = 'race';
     this.updateViewOffset();
+    this.audio.setMusicMode('race', opts.kind === 'campaign' ? (opts.index ?? 0) + 1 : parseInt(hashString(encodeTrack({ name: '', pieces: def.pieces })), 36) % 1000);
     const track = this.loadTrack(def);
     const key = opts.kind === 'campaign' ? `c${PHYSICS_VERSION}.${def.id}` : customKey(def);
     const race = new Race(track);
@@ -434,6 +438,9 @@ class Game {
     s.ghost = s.ghostData && this.settings.ghost ? new GhostPlayer(s.ghostData) : null;
     s.phase = 'countdown';
     s.stunt = null;
+    s.airFor = 0;
+    s.fallSpeed = 0;
+    this.audio.setPaused(false);
     s.countdown = 2.4;
     s.lastBeat = 4;
     s.prevPos.copy(s.race.car.pos);
@@ -481,6 +488,7 @@ class Game {
     s.pausedFrom = s.phase;
     s.phase = 'paused';
     this.audio.stopEngine();
+    this.audio.setPaused(true);
     this.showOverlay('pause');
   }
 
@@ -489,6 +497,7 @@ class Game {
     if (!s || s.phase !== 'paused') return;
     s.phase = s.pausedFrom;
     this.hideOverlay('pause');
+    this.audio.setPaused(false);
     this.audio.startEngine();
     this.last = performance.now();
   }
@@ -587,6 +596,8 @@ class Game {
     this.unloadTrack();
     this.mode = 'editor';
     this.updateViewOffset();
+    this.audio.setPaused(false);
+    this.audio.setMusicMode('menu', 2);
     this.carModel.group.visible = false;
     this.ghostModel.group.visible = false;
     this.show('editor-ui');
@@ -662,6 +673,10 @@ class Game {
       this.settings.volume = Number(e.target.value);
       this.saveSettings();
     });
+    $('#music-volume').addEventListener('input', (e) => {
+      this.settings.musicVolume = Number(e.target.value);
+      this.saveSettings();
+    });
     const sw = $('#swatches');
     CAR_COLORS.forEach((c) => {
       const b = document.createElement('button');
@@ -686,6 +701,7 @@ class Game {
       seg.querySelectorAll('button').forEach((b) => b.classList.toggle('active', String(this.settings[key]) === b.dataset.value));
     });
     $('#volume').value = this.settings.volume;
+    $('#music-volume').value = this.settings.musicVolume;
     $$('.swatch').forEach((b) => b.classList.toggle('active', Number(b.dataset.color) === this.settings.carColor));
   }
 
@@ -856,8 +872,29 @@ class Game {
     }
     if (car.boostTouched && !s.wasBoosting) this.audio.boost();
     s.wasBoosting = car.boostTouched;
-    const inp = input || { throttle: 0 };
-    this.audio.updateEngine(car.speed, s.phase === 'racing' ? inp.throttle : 0, car.slip, car.grounded, car.boostTimer > 0);
+    const inp = input || { throttle: 0, brake: 0 };
+    let sliding = 0;
+    for (const w of car.wheels) if (w.contact && w.sliding) sliding++;
+    this.audio.updateEngine({
+      speed: car.speed,
+      throttle: s.phase === 'racing' || s.phase === 'countdown' ? inp.throttle : 0,
+      brake: inp.brake,
+      slip: car.slip,
+      sliding,
+      grounded: car.grounded,
+      boosting: car.boostTimer > 0,
+      onGrass: car.onGrass,
+      airborne: car.grounded === 0,
+    }, dt);
+    // landing thud after a jump
+    if (car.grounded === 0) {
+      s.airFor = (s.airFor || 0) + dt;
+      s.fallSpeed = Math.max(s.fallSpeed || 0, -car.vel.y);
+    } else if (car.grounded >= 2) {
+      if ((s.airFor || 0) > 0.35) this.audio.land(s.fallSpeed || 0);
+      s.airFor = 0;
+      s.fallSpeed = 0;
+    }
 
     // stunt callouts
     _up.set(0, 1, 0).applyQuaternion(car.quat);

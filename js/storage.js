@@ -28,6 +28,8 @@ export const DEFAULT_SETTINGS = {
   quality: 'auto',      // auto | low | medium | high
   sound: true,
   volume: 0.7,
+  music: true,
+  musicVolume: 0.45,
   ghost: true,
   touch: 'auto',        // auto | on | off
   camera: 0,            // index into camera presets

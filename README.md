@@ -23,8 +23,8 @@ It's a static site with no build step, so GitHub Pages can host it as-is.
 - **Track editor.** Place, rotate, stack and erase 28 kinds of piece on a grid, test-drive the track straight away, save it on your device and share it with a link or a code.
 - **Mobile ready.** On-screen touch controls with multi-touch, layouts for landscape and portrait, fullscreen and installable as a home-screen app.
 - **Low-poly look.** Flat-shaded models with vertex colours, low-poly trees, rocks, mountains and clouds, and real-time shadows.
-- **Synthesised audio.** The engine, tyres, wind, boost and UI sounds are generated with WebAudio, so there are no audio files.
-- **Graphics settings** (auto, low, medium, high), sound on/off and volume, km/h or mph, three camera views and eight car colours.
+- **Procedural audio, no sound files.** A six-cylinder engine with automatic gear shifts, a rev limiter, turbo whistle, blow-off and exhaust pops when you lift off. Tyre squeal follows how much the tyres are sliding, and there's road rumble, grass, wind, landing thuds and crash sounds. A generated soundtrack plays calm on the menus and full drums in races, with its own key and tempo per track. Reverb and a master compressor keep the mix together.
+- **Settings:** graphics (auto, low, medium, high), separate on/off and volume for sound effects and music, km/h or mph, three camera views and eight car colours.
 
 ## Controls
 
@@ -167,7 +167,7 @@ js/scenery.js         sky, lights, ground, trees, mountains, clouds
 js/carModel.js        low-poly car mesh
 js/camera.js          chase and orbit cameras
 js/input.js           keyboard, touch and gamepad input
-js/audio.js           WebAudio synthesiser
+js/audio.js           WebAudio engine/tyre/impact sounds and generative music
 js/ghost.js           ghost recording and playback
 js/bot.js             autopilot (menu demo and track tests)
 js/storage.js         localStorage helpers (best times, ghosts, tracks, settings)
