@@ -33,7 +33,7 @@ export const DEFAULT_SETTINGS = {
   ghost: true,
   touch: 'auto',        // auto | on | off
   camera: 0,            // index into camera presets
-  carColor: 0xff5a36,
+  carColor: 0xe23b2e,
   units: 'kmh',
 };
 

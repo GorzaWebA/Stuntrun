@@ -8,6 +8,7 @@ import { GeometryAccumulator, MeshBuilder, dataToGeometry } from './geometry.js'
 import {
   PIECES, PIECE_ORDER, pieceData, worldConnectors, worldCells, pieceMatrix, rotOffset, openRoute, DIR_X, DIR_Z,
 } from './pieces.js';
+import { signTexture } from './signs.js';
 
 let _mats = null;
 export function trackMaterials() {
@@ -15,6 +16,7 @@ export function trackMaterials() {
     _mats = {
       lit: new THREE.MeshLambertMaterial({ vertexColors: true }),
       glow: new THREE.MeshBasicMaterial({ vertexColors: true, color: 0xfff1b8 }),
+      bulbs: new THREE.MeshBasicMaterial({ vertexColors: true }),
     };
   }
   return _mats;
@@ -25,11 +27,14 @@ function gateGeometries(type) {
   let g = gateGeoCache.get(type);
   if (!g) {
     const d = pieceData(type);
-    g = { frame: dataToGeometry(d.gate.frame), banner: dataToGeometry(d.gate.banner) };
+    g = { frame: dataToGeometry(d.gate.frame), banner: dataToGeometry(d.gate.banner), bulbs: dataToGeometry(d.gate.bulbs) };
     gateGeoCache.set(type, g);
   }
   return g;
 }
+
+let _signPlane = null;
+const signPlane = () => (_signPlane ||= new THREE.PlaneGeometry(16.8, 1.3));
 
 export const connKey = (x, z, y, d) => `${x},${z},${y},${d}`;
 
@@ -93,18 +98,32 @@ export function buildTrack(def, { collision = true, gates = true } = {}) {
     }
     const gate = data.def.gate;
     if (gate) {
-      let banner = null;
+      let setDone = null;
       if (gates) {
         const geos = gateGeometries(p.type);
         const frameMesh = new THREE.Mesh(geos.frame, mats.lit);
-        const color = gate.kind === 'start' ? COLORS.start : gate.kind === 'checkpoint' ? COLORS.checkpoint : 0xffffff;
-        const bannerMat = new THREE.MeshBasicMaterial({ vertexColors: true, color });
-        banner = new THREE.Mesh(geos.banner, bannerMat);
-        for (const mesh of [frameMesh, banner]) {
-          mesh.applyMatrix4(m);
-          mesh.castShadow = true;
-          group.add(mesh);
+        frameMesh.castShadow = true;
+        const bulbs = new THREE.Mesh(geos.bulbs, mats.bulbs);
+        const gateGroup = new THREE.Group();
+        gateGroup.add(frameMesh, bulbs);
+        if (typeof document !== 'undefined') {
+          // painted sign on both faces of the banner
+          const mat = new THREE.MeshBasicMaterial({ map: signTexture(gate.kind) });
+          for (const side of [1, -1]) {
+            const plane = new THREE.Mesh(signPlane(), mat);
+            plane.position.set(0, 8.8, gate.z + side * 0.46);
+            if (side < 0) plane.rotation.y = Math.PI;
+            gateGroup.add(plane);
+          }
+          if (gate.kind === 'checkpoint') setDone = (done) => { mat.map = signTexture(done ? 'checkpoint-done' : 'checkpoint'); mat.needsUpdate = true; };
+        } else {
+          const color = gate.kind === 'start' ? COLORS.start : gate.kind === 'checkpoint' ? COLORS.checkpoint : 0xffffff;
+          const bannerMat = new THREE.MeshBasicMaterial({ vertexColors: true, color });
+          gateGroup.add(new THREE.Mesh(geos.banner, bannerMat));
+          if (gate.kind === 'checkpoint') setDone = (done) => bannerMat.color.set(done ? COLORS.checkpointDone : COLORS.checkpoint);
         }
+        gateGroup.applyMatrix4(m);
+        group.add(gateGroup);
       }
       if (gate.kind !== 'start') {
         const box = new THREE.Box3();
@@ -113,7 +132,7 @@ export function buildTrack(def, { collision = true, gates = true } = {}) {
           corners.push(new THREE.Vector3(x, y, z).applyMatrix4(m));
         }
         box.setFromPoints(corners);
-        const entry = { box, banner, piece: i };
+        const entry = { box, setDone, piece: i };
         if (gate.kind === 'checkpoint') checkpoints.push(entry); else finishes.push(entry);
       }
     }
@@ -141,8 +160,9 @@ export function disposeTrack(track) {
   track.group.traverse((o) => {
     if (o.isMesh) {
       // gate geometries are shared/cached, only dispose the merged meshes
-      if (![...gateGeoCache.values()].some((g) => g.frame === o.geometry || g.banner === o.geometry)) o.geometry.dispose();
-      if (o.material && o.material !== _mats.lit && o.material !== _mats.glow) o.material.dispose();
+      const shared = o.geometry === _signPlane || [...gateGeoCache.values()].some((g) => g.frame === o.geometry || g.banner === o.geometry || g.bulbs === o.geometry);
+      if (!shared) o.geometry.dispose();
+      if (o.material && !Object.values(_mats).includes(o.material)) o.material.dispose();
     }
   });
   track.group.removeFromParent();

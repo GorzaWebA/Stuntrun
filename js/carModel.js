@@ -13,6 +13,26 @@ function hexa(mb, b, t, color) {
   ], color);
 }
 
+// flat disk / star decals facing +Y (roof)
+function disk(mb, cx, y, cz, r, n, color) {
+  const c = V(cx, y, cz);
+  for (let i = 0; i < n; i++) {
+    const a0 = (i / n) * Math.PI * 2, a1 = ((i + 1) / n) * Math.PI * 2;
+    mb.tri(c, V(cx + Math.cos(a1) * r, y, cz + Math.sin(a1) * r), V(cx + Math.cos(a0) * r, y, cz + Math.sin(a0) * r), color);
+  }
+}
+function star(mb, cx, y, cz, R, r, color) {
+  const c = V(cx, y, cz);
+  const pt = (i) => {
+    const a = Math.PI / 2 + (i * Math.PI) / 5; // first point faces forward (+Z)
+    const rr = i % 2 ? r : R;
+    return V(cx + Math.cos(a) * rr, y, cz + Math.sin(a) * rr);
+  };
+  for (let i = 0; i < 10; i++) mb.tri(c, pt(i + 1), pt(i), color);
+}
+
+const INK = 0x2a1f33, BONE = 0xf6ead2, RED = 0xe23b2e;
+
 let shared = null;
 function sharedGeometry() {
   if (shared) return shared;
@@ -26,26 +46,40 @@ function sharedGeometry() {
   // cabin glass
   hexa(detail,
     { x0: -0.86, x1: 0.86, z0: -1.3, z1: 0.82, y: -0.16 },
-    { x0: -0.68, x1: 0.68, z0: -0.98, z1: 0.26, y: 0.34 }, 0x1d2b3f);
+    { x0: -0.68, x1: 0.68, z0: -0.98, z1: 0.26, y: 0.34 }, 0x24324a);
   // roof
   hexa(paint,
     { x0: -0.7, x1: 0.7, z0: -1.0, z1: 0.28, y: 0.33 },
     { x0: -0.66, x1: 0.66, z0: -0.94, z1: 0.22, y: 0.4 }, 0xffffff);
   // spoiler
-  detail.box(0.48, -0.12, -1.92, 0.58, 0.24, -1.8, 0x23272f);
-  detail.box(-0.58, -0.12, -1.92, -0.48, 0.24, -1.8, 0x23272f);
+  detail.box(0.48, -0.12, -1.92, 0.58, 0.24, -1.8, INK);
+  detail.box(-0.58, -0.12, -1.92, -0.48, 0.24, -1.8, INK);
   hexa(paint,
     { x0: -1.0, x1: 1.0, z0: -2.22, z1: -1.72, y: 0.22 },
     { x0: -1.0, x1: 1.0, z0: -2.24, z1: -1.78, y: 0.32 }, 0xffffff);
   // bumpers / skirts
-  detail.box(-0.92, -0.66, 2.02, 0.92, -0.5, 2.2, 0x23272f);
-  detail.box(-0.92, -0.66, -2.2, 0.92, -0.48, -2.0, 0x23272f);
-  detail.box(0.97, -0.64, -1.0, 1.02, -0.5, 0.95, 0x23272f);
-  detail.box(-1.02, -0.64, -1.0, -0.97, -0.5, 0.95, 0x23272f);
-  // stripes on the hood and roof
-  hexa(detail,
-    { x0: -0.18, x1: 0.18, z0: 0.8, z1: 2.14, y: -0.36 },
-    { x0: -0.18, x1: 0.18, z0: 0.8, z1: 2.14, y0: -0.18, y1: -0.33 }, 0xf4f6fa);
+  detail.box(-0.92, -0.66, 2.02, 0.92, -0.5, 2.2, INK);
+  detail.box(-0.92, -0.66, -2.2, 0.92, -0.48, -2.0, INK);
+  detail.box(0.97, -0.64, -1.0, 1.02, -0.5, 0.95, INK);
+  detail.box(-1.02, -0.64, -1.0, -0.97, -0.5, 0.95, INK);
+  // show livery: twin bone stripes nose to tail, side stripes, star roundel on the roof
+  for (const [x0, x1] of [[0.09, 0.25], [-0.25, -0.09]]) {
+    hexa(detail,
+      { x0, x1, z0: 0.8, z1: 2.14, y: -0.36 },
+      { x0, x1, z0: 0.8, z1: 2.14, y0: -0.18, y1: -0.33 }, BONE);
+    hexa(detail,
+      { x0, x1, z0: -2.1, z1: -1.32, y: -0.2 },
+      { x0, x1, z0: -2.1, z1: -1.32, y0: -0.066, y1: -0.116 }, BONE);
+    detail.box(x0, 0.32, -2.235, x1, 0.335, -1.785, BONE);
+  }
+  for (const side of [1, -1]) {
+    const xa = side > 0 ? 0.955 : -0.995, xb = side > 0 ? 0.995 : -0.955;
+    detail.box(xa, -0.45, -1.9, xb, -0.37, 1.5, BONE);
+    detail.box(xa, -0.36, -1.9, xb, -0.33, 1.5, RED);
+  }
+  disk(detail, 0, 0.405, -0.36, 0.34, 10, INK);
+  disk(detail, 0, 0.41, -0.36, 0.28, 10, BONE);
+  star(detail, 0, 0.415, -0.36, 0.24, 0.1, RED);
   // lights
   glow.box(0.55, -0.44, 2.13, 0.86, -0.36, 2.19, 0xfff4cc);
   glow.box(-0.86, -0.44, 2.13, -0.55, -0.36, 2.19, 0xfff4cc);
@@ -63,20 +97,20 @@ function sharedGeometry() {
     paint: paint.toGeometry(), detail: detail.toGeometry(), glow: glow.toGeometry(), tire, hub, flame,
     detailMat: new THREE.MeshLambertMaterial({ vertexColors: true }),
     glowMat: new THREE.MeshBasicMaterial({ vertexColors: true }),
-    tireMat: new THREE.MeshLambertMaterial({ color: 0x1b1e25, flatShading: true }),
-    hubMat: new THREE.MeshLambertMaterial({ color: 0xc9ced6, flatShading: true }),
+    tireMat: new THREE.MeshLambertMaterial({ color: 0x231a2b, flatShading: true }),
+    hubMat: new THREE.MeshLambertMaterial({ color: 0xe8dcc4, flatShading: true }),
     flameMat: new THREE.MeshBasicMaterial({ color: 0xffa23a, transparent: true, opacity: 0.85, depthWrite: false }),
   };
   return shared;
 }
 
 export class CarModel {
-  constructor({ color = 0xff5a36, ghost = false } = {}) {
+  constructor({ color = 0xe23b2e, ghost = false } = {}) {
     const g = sharedGeometry();
     this.group = new THREE.Group();
     this.ghost = ghost;
     if (ghost) {
-      const mat = new THREE.MeshBasicMaterial({ color: 0xbfe9ff, transparent: true, opacity: 0.32, depthWrite: false });
+      const mat = new THREE.MeshBasicMaterial({ color: 0x5fd3cf, transparent: true, opacity: 0.36, depthWrite: false });
       this.paintMat = mat;
       for (const geo of [g.paint, g.detail]) this.group.add(new THREE.Mesh(geo, mat));
     } else {

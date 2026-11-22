@@ -102,6 +102,8 @@ export class CarPhysics {
     this.onGrass = false;
     this.boostTouched = false;
     this.impact = 0;
+    this.impactPoint = new Vector3();
+    this.impactNormal = new Vector3(0, 1, 0);
     this.airTime = 0;
     this.adhesion = 0;
     this.surfaceNormal = new Vector3(0, 1, 0);
@@ -476,7 +478,11 @@ export class CarPhysics {
             _j.addScaledVector(_wf, -jt);
           }
           this._impulse(_j, _r, angScale);
-          this.impact = Math.max(this.impact, -vn);
+          if (-vn > this.impact) {
+            this.impact = -vn;
+            this.impactPoint.copy(_m).addScaledVector(_n, -s.r);
+            this.impactNormal.copy(_n);
+          }
         }
       }
     }

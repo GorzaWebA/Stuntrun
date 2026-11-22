@@ -6,6 +6,7 @@ import { CAMPAIGN } from './tracks.js';
 import { Race } from './race.js';
 import { Bot } from './bot.js';
 import { Scenery } from './scenery.js';
+import { Fx } from './fx.js';
 import { CarModel } from './carModel.js';
 import { ChaseCamera } from './camera.js';
 import { Input } from './input.js';
@@ -13,6 +14,7 @@ import { AudioFX } from './audio.js';
 import { GhostRecorder, GhostPlayer } from './ghost.js';
 import { storage } from './storage.js';
 import { Editor } from './editor.js';
+import { placeBulbs, routeMapSvg, rosetteSvg, starsSvg } from './ui.js';
 
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => Array.from(document.querySelectorAll(sel));
@@ -51,6 +53,7 @@ class Game {
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(68, window.innerWidth / window.innerHeight, 0.3, 7000);
     this.scenery = new Scenery(this.scene);
+    this.fx = new Fx(this.scene);
     this.chase = new ChaseCamera(this.camera);
     this.input = new Input();
     this.audio = new AudioFX();
@@ -109,6 +112,7 @@ class Game {
     const pr = [1, 1.5, 2][this.quality];
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, pr));
     this.scenery.setQuality(this.quality);
+    this.fx?.setQuality(this.quality);
     if (!initial && prevQuality !== this.quality && this.track) this.scenery.buildDecor(this.track);
     this.audio.setEnabled(s.sound);
     this.audio.setVolume(s.volume);
@@ -145,6 +149,7 @@ class Game {
   show(id) {
     $$('.screen').forEach((el) => el.classList.toggle('show', el.id === id));
     this.screen = id;
+    placeAllBulbs();
   }
 
   showOverlay(id) {
@@ -198,7 +203,7 @@ class Game {
   // ------------------------------------------------------------------ track loading
   loadTrack(def) {
     if (this.track && this.track.def === def) {
-      for (const cp of this.track.checkpoints) cp.banner?.material.color.set(COLORS.checkpoint);
+      for (const cp of this.track.checkpoints) cp.setDone?.(false);
       return this.track;
     }
     if (this.track) disposeTrack(this.track);
@@ -211,6 +216,7 @@ class Game {
   unloadTrack() {
     if (this.track) disposeTrack(this.track);
     this.track = null;
+    this.fx?.clear();
   }
 
   // ------------------------------------------------------------------ menu / attract mode
@@ -255,64 +261,66 @@ class Game {
     if (tab === 'campaign') {
       CAMPAIGN.forEach((t, i) => {
         const best = storage.best(`c${PHYSICS_VERSION}.${t.id}`);
-        const medal = medalFor(best?.time, t.medals) || 'none';
-        const card = document.createElement('button');
-        card.className = 'track-card';
-        card.innerHTML = `
-          <span class="num">TRACK ${String(i + 1).padStart(2, '0')}</span>
-          <span class="name">${escapeHtml(t.name)}</span>
-          <span class="medal ${medal}" title="${medal === 'none' ? 'No medal yet' : medal + ' medal'}"></span>
-          <span class="meta">
-            <span class="dots" title="Difficulty ${t.difficulty}/5">${[1, 2, 3, 4, 5].map((d) => `<i class="${d <= t.difficulty ? 'on' : ''}"></i>`).join('')}</span>
-            <span>${best ? `Best <span class="best">${formatTime(best.time)}</span>` : `Gold ${formatTime(t.medals[0])}`}</span>
-          </span>`;
-        card.addEventListener('click', () => this.startRace(t, { kind: 'campaign', index: i }));
-        list.appendChild(card);
+        const medal = medalFor(best?.time, t.medals);
+        const wrap = document.createElement('div');
+        wrap.className = 'ticket-wrap';
+        wrap.innerHTML = `
+          <button class="ticket" aria-label="Act ${i + 1}: ${escapeHtml(t.name)}">
+            <span class="stub"><span class="stub-label">Act</span><span class="stub-num">${i + 1}</span></span>
+            <span class="tbody">
+              <span class="tname">${escapeHtml(t.name)}</span>
+              <span class="trosette">${rosetteSvg(medal, { title: medal ? `${medal[0].toUpperCase()}${medal.slice(1)} medal` : 'No medal yet' })}</span>
+              ${routeMapSvg(t, t.id)}
+              <span class="tfoot">${starsSvg(t.difficulty)}<span>${best ? `Best ${formatTime(best.time)}` : `Gold ${formatTime(t.medals[0])}`}</span></span>
+            </span>
+          </button>`;
+        wrap.querySelector('.ticket').addEventListener('click', () => this.startRace(t, { kind: 'campaign', index: i }));
+        list.appendChild(wrap);
       });
     } else {
       const tracks = storage.customTracks();
-      const add = document.createElement('button');
-      add.className = 'track-card add';
-      add.textContent = '+ New track';
-      add.addEventListener('click', () => this.openEditor(null));
-      list.appendChild(add);
-      const imp = document.createElement('button');
-      imp.className = 'track-card add';
-      imp.textContent = 'Import track code';
-      imp.addEventListener('click', () => this.importDialog());
-      list.appendChild(imp);
-      if (!tracks.length) {
-        const p = document.createElement('p');
-        p.className = 'empty-note';
-        p.textContent = 'Tracks you build in the editor are saved here. Share them with a link or a code.';
-        list.appendChild(p);
-      }
+      const shelf = document.createElement('div');
+      shelf.className = 'empty-shelf';
+      shelf.innerHTML = `
+        <p>${tracks.length ? 'Build a new act or bring one in from a friend.' : 'You haven\'t built anything yet. Tracks you save in the editor show up here, and you can share them with a link.'}</p>
+        <div class="row">
+          <button class="btn primary" data-c="new"><svg class="ic"><use href="#i-edit"/></svg>Build a track</button>
+          <button class="btn" data-c="import"><svg class="ic"><use href="#i-share"/></svg>Import a code</button>
+        </div>`;
+      shelf.querySelector('[data-c="new"]').addEventListener('click', () => this.openEditor(null));
+      shelf.querySelector('[data-c="import"]').addEventListener('click', () => this.importDialog());
+      list.appendChild(shelf);
       tracks.slice().sort((a, b) => b.updated - a.updated).forEach((entry) => {
         let def;
         try { def = decodeTrack(entry.code); } catch { return; }
         const key = customKey(def);
         const best = storage.best(key);
         const card = document.createElement('div');
-        card.className = 'track-card';
-        card.tabIndex = 0;
+        card.className = 'ticket-wrap';
         card.innerHTML = `
-          <span class="num">MY TRACK</span>
-          <span class="name">${escapeHtml(entry.name || def.name)}</span>
-          <span class="meta"><span>${def.pieces.length} pieces</span>${best ? `<span>Best <span class="best">${formatTime(best.time)}</span></span>` : ''}</span>
-          <span class="card-actions">
-            <button class="btn primary compact" data-c="play">Play</button>
-            <button class="btn" data-c="edit">Edit</button>
-            <button class="btn" data-c="share">Share</button>
-            <button class="btn ghost" data-c="delete" aria-label="Delete">✕</button>
-          </span>`;
+          <div class="ticket custom">
+            <span class="stub"><svg class="ic"><use href="#i-edit"/></svg></span>
+            <span class="tbody">
+              <span class="tname">${escapeHtml(entry.name || def.name)}</span>
+              ${routeMapSvg(def, `u.${entry.id}.${entry.updated}`)}
+              <span class="tfoot"><span>${def.pieces.length} pieces</span><span>${best ? `Best ${formatTime(best.time)}` : 'Not driven yet'}</span></span>
+              <span class="ticket-actions">
+                <button class="btn primary small" data-c="play"><svg class="ic"><use href="#i-play"/></svg>Play</button>
+                <button class="btn small" data-c="edit">Edit</button>
+                <button class="btn small" data-c="share">Share</button>
+                <button class="btn small danger" data-c="delete" aria-label="Delete track" title="Delete"><svg class="ic"><use href="#i-trash"/></svg></button>
+              </span>
+            </span>
+          </div>`;
         card.addEventListener('click', (e) => {
-          const c = e.target.closest('[data-c]')?.dataset.c || 'play';
+          const c = e.target.closest('[data-c]')?.dataset.c;
+          if (!c) return;
           if (c === 'play') this.startRace({ ...def, name: entry.name || def.name }, { kind: 'custom', entry });
           else if (c === 'edit') this.openEditor({ ...def, name: entry.name || def.name }, entry.id);
           else if (c === 'share') this.shareDialog({ ...def, name: entry.name || def.name });
           else if (c === 'delete') {
             this.modal({
-              title: 'Delete track?', text: `“${entry.name}” will be removed from this device.`,
+              title: 'Delete this track?', text: `“${entry.name}” will be removed from this device. Links you've shared keep working.`,
               buttons: [{ label: 'Cancel' }, {
                 label: 'Delete', primary: true,
                 action: () => { storage.saveCustomTracks(storage.customTracks().filter((t) => t.id !== entry.id)); this.openTrackSelect('custom'); },
@@ -432,7 +440,8 @@ class Game {
     this.hideOverlay('finish');
     this.hideOverlay('pause');
     if (this.screen !== 'hud') this.show('hud');
-    for (const cp of this.track.checkpoints) cp.banner?.material.color.set(COLORS.checkpoint);
+    for (const cp of this.track.checkpoints) cp.setDone?.(false);
+    this.fx.clear();
     s.race.reset();
     s.recorder.reset();
     s.ghost = s.ghostData && this.settings.ghost ? new GhostPlayer(s.ghostData) : null;
@@ -522,7 +531,7 @@ class Game {
     if (e.type === 'checkpoint') {
       this.audio.checkpoint();
       const cp = this.track.checkpoints[e.index];
-      cp.banner?.material.color.set(COLORS.checkpointDone);
+      cp.setDone?.(true);
       let html = `${e.count}/${s.race.checkpointCount} &nbsp;${formatTime(e.time)}`;
       const bestSplit = s.best?.splits?.[e.count - 1];
       if (bestSplit != null) {
@@ -550,6 +559,7 @@ class Game {
       storage.saveGhost(s.key, s.ghostData);
     }
     this.audio.finish(isBest);
+    this.fx.confettiBurst(s.race.car.pos, s.race.car.quat, s.race.car.vel);
     setTimeout(() => { if (this.session === s && s.phase === 'finished') this.chase.mode = 'orbit'; }, 700);
     clearTimeout(this._finishT);
     this._finishT = setTimeout(() => {
@@ -567,19 +577,18 @@ class Game {
       note.textContent = 'Test run complete';
       note.className = 'finish-note';
     } else if (isBest) {
-      note.textContent = prev ? `New personal best! ${formatDelta(time - prev.time)}` : 'First finish – ghost saved!';
+      note.textContent = prev ? `New best, ${formatDelta(time - prev.time)} s` : 'First finish. Your ghost will race you next time.';
       note.className = 'finish-note good';
     } else {
-      note.textContent = `${formatDelta(time - prev.time)} from your best (${formatTime(prev.time)})`;
+      note.textContent = `${formatDelta(time - prev.time)} s off your best of ${formatTime(prev.time)}`;
       note.className = 'finish-note';
     }
-    const badge = $('#finish-medal');
     const medal = medalFor(time, s.medals);
-    badge.className = `medal-badge ${medal ? `show ${medal}` : ''}`;
-    badge.textContent = medal ? `${medal} medal` : '';
+    $('#finish-medal').innerHTML = s.medals ? rosetteSvg(medal, { title: medal ? `${medal} medal` : 'No medal', outline: 'rgba(246,234,210,0.35)' }) : '';
+    $('#finish-medal').style.display = s.medals ? '' : 'none';
     const targets = $('#finish-targets');
     targets.innerHTML = s.medals
-      ? s.medals.map((m, i) => `<span class="target ${time <= m ? 'hit' : ''}"><i class="medal ${MEDALS[i]}"></i>${formatTime(m)}</span>`).join('')
+      ? s.medals.map((m, i) => `<span class="target ${time <= m ? 'hit' : ''}">${rosetteSvg(MEDALS[i])}${formatTime(m)}</span>`).join('')
       : '';
     const hasNext = s.kind === 'campaign' && s.index < CAMPAIGN.length - 1;
     $('#finish-next').style.display = hasNext ? '' : 'none';
@@ -708,6 +717,13 @@ class Game {
   // ------------------------------------------------------------------ HUD
   updateHudStatic() {
     const s = this.session;
+    const n = s.race.checkpointCount;
+    $('#hud-cp .flags').innerHTML = n <= 8 ? '<svg class="ic"><use href="#i-flag"/></svg>'.repeat(n) : '';
+    $('#hud-cp').style.display = n ? '' : 'none';
+    const lights = $('#countdown');
+    lights.classList.toggle('show', false);
+    lights.classList.toggle('go', false);
+    lights.querySelectorAll('.lamp').forEach((l) => l.classList.toggle('on', false));
     let sub = '';
     if (s.best) sub = `PB ${formatTime(s.best.time)}`;
     else if (s.medals) sub = `Gold ${formatTime(s.medals[0])}`;
@@ -728,21 +744,19 @@ class Game {
     const cpText = `${race.passed.size}/${n}`;
     if (this.hudCache.cp !== cpText) {
       this.hudCache.cp = cpText;
-      $('#hud-cp span').textContent = cpText;
-      $('#hud-cp').classList.toggle('done', race.passed.size >= n);
+      $('#hud-cp .count').textContent = cpText;
+      $$('#hud-cp .flags .ic').forEach((f, i) => f.classList.toggle('on', i < race.passed.size));
     }
     const v = Math.abs(race.car.fwdSpeed) * (this.settings.units === 'mph' ? 2.23694 : 3.6);
     this.setText('hud-speed', String(Math.round(v)));
     // countdown
-    const cd = $('#countdown');
+    const lights = $('#countdown');
     if (s.phase === 'countdown') {
       const beat = Math.ceil(s.countdown / 0.8);
       if (beat !== s.lastBeat && beat <= 3 && beat >= 1) {
         s.lastBeat = beat;
-        cd.textContent = String(beat);
-        cd.className = '';
-        void cd.offsetWidth;
-        cd.className = 'pop';
+        lights.classList.toggle('show', true);
+        lights.querySelectorAll('.lamp').forEach((l, i) => l.classList.toggle('on', i < 4 - beat));
         this.audio.countdown(false);
       }
     }
@@ -763,7 +777,7 @@ class Game {
     const onTrack = car.grounded >= 2;
     st.air = Math.max(st.air, car.airTime);
     if (onTrack && st.air > 0) {
-      if (st.air > 1.1) this.stuntCallout(`Big air ${st.air.toFixed(1)}s`);
+      if (st.air > 1.1) this.stuntCallout(`Big air ${st.air.toFixed(1)} s`);
       st.air = 0;
     }
     if (onTrack && _up.y < -0.6) {
@@ -803,11 +817,11 @@ class Game {
       if (s.countdown <= 0) {
         s.phase = 'racing';
         race.begin();
-        const cd = $('#countdown');
-        cd.textContent = 'GO!';
-        cd.className = 'go pop';
+        const lights = $('#countdown');
+        lights.classList.toggle('show', true);
+        lights.classList.toggle('go', true);
         this.audio.countdown(true);
-        setTimeout(() => { if (cd.textContent === 'GO!') cd.textContent = ''; }, 700);
+        s.lightsUp = true;
       }
     }
     const input = attract ? null : this.input.state();
@@ -828,6 +842,10 @@ class Game {
       steps++;
     }
     if (steps >= 16) this.acc = 0;
+    if (s.lightsUp && race.time > 0.9) {
+      s.lightsUp = false;
+      $('#countdown').classList.toggle('show', false);
+    }
     const alpha = this.acc / PHYS_DT;
     _ipos.lerpVectors(s.prevPos, car.pos, alpha);
     _iquat.slerpQuaternions(s.prevQuat, car.quat, alpha);
@@ -845,6 +863,8 @@ class Game {
         s.prevPos.copy(car.pos);
         s.prevQuat.copy(car.quat);
       }
+      this.fx.emitCar(car, dt);
+      this.fx.update(dt);
       this.chase.update(dt, car, _ipos, _iquat);
       this.scenery.update(dt, _ipos, this.camera);
       return;
@@ -869,7 +889,10 @@ class Game {
     if (car.impact > 4) {
       this.audio.impact(car.impact);
       this.chase.shake = Math.min(0.5, car.impact * 0.04);
+      if (car.impact > 6) this.fx.sparksAt(car.impactPoint, car.impactNormal, car.vel, car.impact);
     }
+    this.fx.emitCar(car, dt);
+    this.fx.update(dt);
     if (car.boostTouched && !s.wasBoosting) this.audio.boost();
     s.wasBoosting = car.boostTouched;
     const inp = input || { throttle: 0, brake: 0 };
@@ -891,7 +914,10 @@ class Game {
       s.airFor = (s.airFor || 0) + dt;
       s.fallSpeed = Math.max(s.fallSpeed || 0, -car.vel.y);
     } else if (car.grounded >= 2) {
-      if ((s.airFor || 0) > 0.35) this.audio.land(s.fallSpeed || 0);
+      if ((s.airFor || 0) > 0.35) {
+        this.audio.land(s.fallSpeed || 0);
+        if ((s.fallSpeed || 0) > 5) this.fx.landing(car, s.fallSpeed);
+      }
       s.airFor = 0;
       s.fallSpeed = 0;
     }
@@ -938,11 +964,21 @@ function toggleFullscreen() {
     .catch(() => {});
 }
 
+// Marquee signs get their bulbs once they are visible (and again when fonts or
+// the window size change their size).
+function placeAllBulbs() {
+  document.querySelectorAll('.marquee').forEach((m) => { if (m.offsetParent !== null) placeBulbs(m); });
+}
+let bulbTimer = 0;
+window.addEventListener('resize', () => { clearTimeout(bulbTimer); bulbTimer = setTimeout(placeAllBulbs, 120); });
+document.fonts?.ready.then(placeAllBulbs);
+
 function boot() {
+  placeAllBulbs();
   const test = document.createElement('canvas');
   const gl = test.getContext('webgl2') || test.getContext('webgl');
   if (!gl) {
-    document.querySelector('.loading-text').textContent = 'Sorry – your browser does not support WebGL.';
+    document.querySelector('.loading-text').textContent = 'Your browser can\'t run WebGL, which Stuntrun needs. Try an up-to-date Chrome, Firefox or Safari.';
     return;
   }
   try {

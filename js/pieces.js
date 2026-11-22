@@ -155,14 +155,17 @@ const PLAZA_CONNS = [
   { x: 0, z: 0, y: 0, d: 2 }, { x: 0, z: 0, y: 0, d: 0 },
   { x: 0, z: 0, y: 0, d: 1 }, { x: 0, z: 0, y: 0, d: 3 },
 ];
-const OPEN = { floorA: 0x4b5569, floorB: 0x546077, edgeA: 0xffc233, edgeB: 0x2b3448, concrete: 0xc7ccd6, hazardA: 0xffc233, hazardB: 0x23272f };
+const OPEN = { floorA: 0x8c7f72, floorB: 0x857868, edgeA: 0xe23b2e, edgeB: 0xf6ead2, concrete: 0xeadcc0, hazardA: 0xffc42e, hazardB: 0x2a1f33 };
 
 function buildPlazaFloor(mb, mask, rail = false) {
   const h = T / 2, D = DECK_T, n = 4, step = T / n;
   for (let i = 0; i < n; i++) {
     for (let j = 0; j < n; j++) {
       const x0 = -h + i * step, x1 = x0 + step, z0 = -h + j * step, z1 = z0 + step;
-      mb.quad(V(x0, 0, z0), V(x0, 0, z1), V(x1, 0, z1), V(x1, 0, z0), (i + j) % 2 ? OPEN.floorA : OPEN.floorB, SURF.ROAD);
+      mb.quad(V(x0, 0, z0), V(x0, 0, z1), V(x1, 0, z1), V(x1, 0, z0), ((i * 7 + j * 3) % 5) ? OPEN.floorA : OPEN.floorB, SURF.ROAD);
+      // painted seam lines between slabs (visual only)
+      mb.quad(V(x0 + 0.05, 0.015, z0), V(x0 + 0.05, 0.015, z1), V(x0 + 0.2, 0.015, z1), V(x0 + 0.2, 0.015, z0), 0x6f6357);
+      mb.quad(V(x0, 0.015, z0 + 0.2), V(x0, 0.015, z0 + 0.05), V(x1, 0.015, z0 + 0.05), V(x1, 0.015, z0 + 0.2), 0x6f6357);
     }
   }
   mb.quad(V(-h, -D, -h), V(h, -D, -h), V(h, -D, h), V(-h, -D, h), COLORS.bottom, SURF.WALL);
@@ -221,16 +224,16 @@ function hazardBlock(mb, x0, y0, z0, x1, y1, z1, color, bands = 0) {
 
 function cone(mb, x, z, s = 1) {
   const r = 0.5 * s, hgt = 1.1 * s, segs = 6;
-  mb.box(x - r * 1.2, 0, z - r * 1.2, x + r * 1.2, 0.12 * s, z + r * 1.2, 0x23272f, SURF.WALL);
+  mb.box(x - r * 1.2, 0, z - r * 1.2, x + r * 1.2, 0.12 * s, z + r * 1.2, 0x2a1f33, SURF.WALL);
   const apex = V(x, hgt, z);
   for (let i = 0; i < segs; i++) {
     const a0 = (i / segs) * Math.PI * 2, a1 = ((i + 1) / segs) * Math.PI * 2;
     const p0 = V(x + Math.cos(a0) * r, 0.12 * s, z + Math.sin(a0) * r), p1 = V(x + Math.cos(a1) * r, 0.12 * s, z + Math.sin(a1) * r);
     const m0 = V().lerpVectors(p0, apex, 0.45), m1 = V().lerpVectors(p1, apex, 0.45);
     const n0 = V().lerpVectors(p0, apex, 0.62), n1 = V().lerpVectors(p1, apex, 0.62);
-    mb.quad(p1, p0, m0, m1, 0xff7a1a, SURF.WALL);
-    mb.quad(m1, m0, n0, n1, 0xf4f6fa, SURF.WALL);
-    mb.tri(n1, n0, apex, 0xff7a1a, SURF.WALL);
+    mb.quad(p1, p0, m0, m1, 0xe8552a, SURF.WALL);
+    mb.quad(m1, m0, n0, n1, 0xf6ead2, SURF.WALL);
+    mb.tri(n1, n0, apex, 0xe8552a, SURF.WALL);
   }
 }
 
@@ -261,7 +264,7 @@ function plazaDef(name, obstacle = null, extra = {}) {
 
 const OPEN_DEFS = [
   { id: 'plaza', ...plazaDef('Open floor') },
-  { id: 'plazaPillar', ...plazaDef('Pillar', (mb) => hazardBlock(mb, -2, 0, -2, 2, 7, 2, OPEN.concrete, 4), { cells: [[0, 0, 0], [0, 0, 1]] }) },
+  { id: 'plazaPillar', ...plazaDef('Pillar', (mb) => { hazardBlock(mb, -2, 0, -2, 2, 7, 2, OPEN.concrete, 0); for (const y of [1.2, 4.2]) mb.box(-2.05, y, -2.05, 2.05, y + 0.9, 2.05, 0xe23b2e); }, { cells: [[0, 0, 0], [0, 0, 1]] }) },
   {
     id: 'plazaWall',
     ...plazaDef('Barrier', (mb) => {
@@ -479,8 +482,25 @@ function buildGate(kind, gz) {
       banner.quad(V(xb, ya, zb), V(xa, ya, zb), V(xa, yb, zb), V(xb, yb, zb), col);
     }
   }
-  // inner banner thickness (top / bottom are hidden by bars)
-  return { frame: frame.toData(), banner: banner.toData() };
+  // bunting hanging under the lower bar
+  const flagCols = [COLORS.curbA, 0xffc42e, COLORS.checkpoint, COLORS.curbB];
+  const flags = 12, fw = 16.8 / flags;
+  for (let i = 0; i < flags; i++) {
+    const xa = -8.4 + i * fw + 0.12, xb = xa + fw - 0.24, xm = (xa + xb) / 2;
+    const col = flagCols[i % flagCols.length];
+    frame.tri(V(xa, 7.85, gz + 0.06), V(xm, 7.05, gz + 0.06), V(xb, 7.85, gz + 0.06), col);
+    frame.tri(V(xb, 7.85, gz - 0.06), V(xm, 7.05, gz - 0.06), V(xa, 7.85, gz - 0.06), col);
+  }
+  // marquee bulbs along the top bar and up the inside of the pillars
+  const bulbs = new MeshBuilder();
+  const b = 0.13;
+  for (let x = -7.8; x <= 7.81; x += 1.3) {
+    for (const z of [gz + 0.56, gz - 0.56]) bulbs.box(x - b, 9.6 - b, z - b, x + b, 9.6 + b, z + b, 0xfff1c4);
+  }
+  for (let y = 1.2; y < 7.6; y += 1.05) {
+    for (const x of [8.33, -8.33]) bulbs.box(x - b, y - b, gz - b, x + b, y + b, gz + b, 0xfff1c4);
+  }
+  return { frame: frame.toData(), banner: banner.toData(), bulbs: bulbs.toData() };
 }
 
 const cache = new Map();

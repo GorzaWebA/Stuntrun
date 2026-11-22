@@ -1,6 +1,6 @@
 # Stuntrun
 
-**Stuntrun** is a low-poly 3D stunt racing game that runs in the browser. You race the clock while riding walls, driving upside down, spinning through corkscrews, looping the loop and jumping big gaps. You can chase your own ghost and build your own tracks in the editor. It works with a keyboard, a gamepad or a touchscreen, so it plays on desktop and on phones.
+**Stuntrun** is a low-poly 3D stunt racing game that runs in the browser, set at a travelling stunt show in the desert. You race the clock while riding walls, driving upside down, spinning through corkscrews, looping the loop and jumping big gaps. You can chase your own ghost and build your own tracks in the editor. It works with a keyboard, a gamepad or a touchscreen, so it plays on desktop and on phones.
 
 It's a static site with no build step, so GitHub Pages can host it as-is.
 
@@ -16,13 +16,14 @@ It's a static site with no build step, so GitHub Pages can host it as-is.
 - **Stunt grip.** On walls, ceilings, loops and rolls the tyres grip harder the faster you go. Above about 90 km/h the car sticks, so you can ride vertical walls and drive upside down. Below about 65 km/h gravity wins and you drop off. In the air the nose follows the flight path, so landings stay clean.
 - **Stunt pieces.** Loops, corkscrews (a full 360° roll), upside-down sections, wall rides, near-vertical wall turns, small and big jumps, ramps, banked turns and boost pads.
 - **Open areas with obstacles.** Wide floor sections with no barriers, where you pick your own line around pillars, barriers and cones, over speed bumps and off jump wedges. On raised platforms the open edges have a low safety rail.
-- **11 campaign tracks**, from *Launch Pad* to *Grand Stunt*. Each has gold, silver and bronze medal times.
-- **Stunt callouts.** "Big air", "Wall ride!" and "Upside down!" pop up as you pull them off.
+- **An 11-act stunt show**, from *Opening Act* to *Grand Finale*. Each act has gold, silver and bronze medal times, and its ticket shows a sketch of the route.
+- **Stunt callouts.** "Big air", "Wall ride!" and "Upside down!" stamp onto the screen as you pull them off.
+- **Effects.** Tyre smoke when you slide, dust on the sand, a dust ring when you land a jump, sparks when you scrape a wall and confetti cannons at the finish.
 - **Checkpoints and respawn.** You respawn at the last checkpoint with the speed you had there.
 - **Ghost replays.** Your best run is saved and races alongside you as a translucent car.
 - **Track editor.** Place, rotate, stack and erase 28 kinds of piece on a grid, test-drive the track straight away, save it on your device and share it with a link or a code.
 - **Mobile ready.** On-screen touch controls with multi-touch, layouts for landscape and portrait, fullscreen and installable as a home-screen app.
-- **Low-poly look.** Flat-shaded models with vertex colours, low-poly trees, rocks, mountains and clouds, and real-time shadows.
+- **Its own look.** A desert stunt show: striped mesas, saguaros, show gates with painted signs, marquee bulbs and bunting, and a car in show livery. The menus use marquee signs, tickets and prize rosettes. Everything is flat-shaded low poly with real-time shadows. The palette, type and rules are written down in [DESIGN.md](DESIGN.md).
 - **Procedural audio, no sound files.** A six-cylinder engine with automatic gear shifts, a rev limiter, turbo whistle, blow-off and exhaust pops when you lift off. Tyre squeal follows how much the tyres are sliding, and there's road rumble, grass, wind, landing thuds and crash sounds. A generated soundtrack plays calm on the menus and full drums in races, with its own key and tempo per track. Reverb and a master compressor keep the mix together.
 - **Settings:** graphics (auto, low, medium, high), separate on/off and volume for sound effects and music, km/h or mph, three camera views and eight car colours.
 
@@ -163,8 +164,11 @@ js/track.js           track builder, route finder, turtle scripts, share codes
 js/tracks.js          campaign tracks and medal times
 js/race.js            race rules: timer, checkpoints, finish, respawn
 js/editor.js          track editor
-js/scenery.js         sky, lights, ground, trees, mountains, clouds
-js/carModel.js        low-poly car mesh
+js/scenery.js         sky, lights, desert ground, mesas, cacti, clouds
+js/carModel.js        low-poly car mesh and livery
+js/signs.js           painted gate signs (canvas textures)
+js/fx.js              smoke, dust, sparks and confetti
+js/ui.js              marquee bulbs, ticket route maps, rosettes, stars
 js/camera.js          chase and orbit cameras
 js/input.js           keyboard, touch and gamepad input
 js/audio.js           WebAudio engine/tyre/impact sounds and generative music
@@ -173,6 +177,8 @@ js/bot.js             autopilot (menu demo and track tests)
 js/storage.js         localStorage helpers (best times, ghosts, tracks, settings)
 tools/                headless simulator and ASCII map tool
 vendor/               three.js r170 (MIT licence)
+assets/               app icons and self-hosted fonts
+DESIGN.md             art direction: palette, type, shapes, motion, world
 ```
 
 Best times, ghosts, settings and your own tracks are stored in the browser's `localStorage` on each device.
@@ -180,4 +186,5 @@ Best times, ghosts, settings and your own tracks are stored in the browser's `lo
 ## Credits
 
 - Rendering: [three.js](https://threejs.org) (MIT licence, see `vendor/three.LICENSE`).
-- All models, tracks, physics and sounds are generated in code. The game uses no external art or audio assets.
+- Fonts: [Alfa Slab One](https://fonts.google.com/specimen/Alfa+Slab+One) and [Barlow Condensed](https://fonts.google.com/specimen/Barlow+Condensed), both under the SIL Open Font License (see `assets/fonts/`).
+- All models, tracks, physics and sounds are generated in code. Apart from the fonts, the game uses no external art or audio assets.

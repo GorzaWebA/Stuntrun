@@ -538,7 +538,7 @@ function renderThumbnails() {
       const gate = dataToGeometry(data.gate.frame);
       group.add(new THREE.Mesh(gate, mat));
       const banner = dataToGeometry(data.gate.banner);
-      const color = id === 'start' ? 0x2ad37a : id === 'checkpoint' ? 0x22c3f0 : 0xffffff;
+      const color = id === 'start' ? 0xe23b2e : id === 'checkpoint' ? 0x2a9d9a : 0xffffff;
       group.add(new THREE.Mesh(banner, new THREE.MeshBasicMaterial({ vertexColors: true, color })));
     }
     if (data.glow) group.add(new THREE.Mesh(dataToGeometry(data.glow), new THREE.MeshBasicMaterial({ vertexColors: true, color: 0xfff1b8 })));
