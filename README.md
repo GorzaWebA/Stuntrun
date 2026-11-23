@@ -12,7 +12,7 @@ It's a static site with no build step, so GitHub Pages can host it as-is.
 
 ## Features
 
-- **Weighty car physics.** A 1350 kg raycast-suspension car with real body roll and weight transfer. Its tyres break into a slide when you push too hard, and they grip less until the slide settles. It's slow to change direction at speed, so brake before corners.
+- **Weighty car physics.** A 1350 kg raycast-suspension car with real body roll and weight transfer. Its tyres break into a slide when you push too hard, and they grip less until the slide settles. It's slow to change direction at speed, so brake before corners, or hold drift to swing the back round.
 - **Stunt grip.** On walls, ceilings, loops and rolls the tyres grip harder the faster you go. Above about 90 km/h the car sticks, so you can ride vertical walls and drive upside down. Below about 65 km/h gravity wins and you drop off. In the air the nose follows the flight path, so landings stay clean.
 - **Stunt pieces.** Loops, corkscrews (a full 360° roll), upside-down sections, wall rides, near-vertical wall turns, small and big jumps, ramps, banked turns and boost pads.
 - **Stunt arenas.** Fenced open floors, each built around one idea, where you pick your own line:
@@ -22,7 +22,8 @@ It's a static site with no build step, so GitHub Pages can host it as-is.
   - *Landing arena:* a painted landing zone after a big jump, with cones guiding you to the exit.
 - **Tracks built for a heavy car.** Every corner is picked for the speed you arrive with, so you only need to brake hard where brake boards tell you to.
 - **An 11-act stunt show**, from *Opening Act* to *Grand Finale*. Each act has gold, silver and bronze medal times, and its ticket shows a sketch of the route.
-- **Stunt callouts.** "Big air", "Wall ride!" and "Upside down!" stamp onto the screen as you pull them off.
+- **Drift button.** Hold it to kick the back out and slide through corners. See *Drifting* below.
+- **Stunt callouts.** "Big air", "Drift", "Wall ride!" and "Upside down!" stamp onto the screen as you pull them off.
 - **Effects.** Tyre smoke when you slide, dust on the sand, a dust ring when you land a jump, sparks when you scrape a wall and confetti cannons at the finish.
 - **Checkpoints and respawn.** Press `R` (or ↺) to go back to the last checkpoint: you start again standing still, upright and facing down the track, so nothing from a crash carries over. Press it twice quickly to restart the run from the start.
 - **Knock-over cones.** Clip a cone and it goes flying. It costs you a little speed, not your run.
@@ -38,7 +39,8 @@ It's a static site with no build step, so GitHub Pages can host it as-is.
 | Action | Keyboard | Touch | Gamepad |
 | --- | --- | --- | --- |
 | Accelerate | `W` / `↑` | ▲ (right) | RT / A |
-| Brake / reverse | `S` / `↓` / `Space` | ▼ (right) | LT / B |
+| Brake / reverse | `S` / `↓` | ▼ (right) | LT / B |
+| Drift (hold) | `Space` / `Shift` | Drift button above ▲ (it accelerates too) | X |
 | Steer | `A` `D` / `←` `→` | ◀ ▶ (left) | Left stick / D-pad |
 | Back to last checkpoint | `R` (or `Enter`) | ↺ button | Y / Back |
 | Restart from the start | `R` twice quickly | ↺ twice quickly (or Pause → Restart) | Back twice |
@@ -46,6 +48,8 @@ It's a static site with no build step, so GitHub Pages can host it as-is.
 | Change camera | `C` | Settings | LB / RB |
 
 You can steer a little while the car is in the air.
+
+**Drifting:** hold drift and steer into a corner. The back of the car steps out and holds a slide of about 40°. Steer the other way to trim the angle, and keep the gas on to carry your speed. Let go and the car straightens up. A drift takes a much tighter line than grip alone, for some speed, so it's the quick way round corners that would otherwise need hard braking. It only works on the ground, never on walls, loops or ceilings.
 
 ### Editor controls
 

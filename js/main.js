@@ -829,7 +829,7 @@ class Game {
 
   // Detects big air, wall rides and upside-down driving (uses _up of the car).
   updateStunts(s, car, dt) {
-    const st = s.stunt || (s.stunt = { air: 0, inv: 0, wall: 0, invShown: false, wallShown: false });
+    const st = s.stunt || (s.stunt = { air: 0, inv: 0, wall: 0, drift: 0, invShown: false, wallShown: false });
     const onTrack = car.grounded >= 2;
     st.air = Math.max(st.air, car.airTime);
     if (onTrack && st.air > 0) {
@@ -840,6 +840,12 @@ class Game {
       st.inv += dt;
       if (st.inv > 0.35 && !st.invShown) { st.invShown = true; this.stuntCallout('Upside down!'); }
     } else if (_up.y > 0.3) { st.inv = 0; st.invShown = false; }
+    // a held slide is called out when it ends, like a landing
+    if (onTrack && car.drift > 0.5 && car.slideAngle > 0.3 && car.speed > 12) st.drift += dt;
+    else if (car.drift < 0.2) {
+      if (st.drift > 1.0) this.stuntCallout(`Drift ${st.drift.toFixed(1)} s`);
+      st.drift = 0;
+    }
     if (onTrack && Math.abs(_up.y) < 0.35) {
       st.wall += dt;
       if (st.wall > 0.45 && !st.wallShown && !st.invShown) { st.wallShown = true; this.stuntCallout('Wall ride!'); }

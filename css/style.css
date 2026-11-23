@@ -418,6 +418,9 @@ body.touch .touch-controls { display: block; }
 .touch-cluster button.gas { width: clamp(82px, 13vw, 112px); height: clamp(82px, 13vw, 112px); background: var(--marquee); color: var(--ink); box-shadow: 0 5px 0 var(--marquee-deep); }
 .touch-cluster button.brake { background: var(--red); box-shadow: 0 5px 0 var(--red-deep); }
 .touch-cluster button.held { transform: translateY(4px); box-shadow: 0 1px 0 var(--ink-deep); }
+/* drift sits right above gas so the thumb can slide up onto it */
+.touch-col { display: flex; flex-direction: column; align-items: center; gap: 12px; }
+.touch-cluster button.drift { width: clamp(60px, 9vw, 78px); height: clamp(60px, 9vw, 78px); background: var(--teal); color: var(--bone); box-shadow: 0 5px 0 #1d6e6c; }
 body.touch .hud-speed { bottom: calc(24px + var(--safe-b)); }
 
 /* ---------- Editor ---------- */

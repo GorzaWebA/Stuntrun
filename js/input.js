@@ -3,7 +3,8 @@ const KEYMAP = {
   left: ['ArrowLeft', 'KeyA'],
   right: ['ArrowRight', 'KeyD'],
   gas: ['ArrowUp', 'KeyW'],
-  brake: ['ArrowDown', 'KeyS', 'Space'],
+  brake: ['ArrowDown', 'KeyS'],
+  drift: ['Space', 'ShiftLeft', 'ShiftRight'],
 };
 
 const ACTION_KEYS = {
@@ -18,12 +19,12 @@ const ACTION_KEYS = {
 export class Input {
   constructor() {
     this.keys = new Set();
-    this.touch = { left: false, right: false, gas: false, brake: false };
+    this.touch = { left: false, right: false, gas: false, brake: false, drift: false };
     this.pointers = new Map();
     this.listeners = [];
     this.enabled = true;
     this.padPrev = [];
-    this.padState = { steer: 0, throttle: 0, brake: 0 };
+    this.padState = { steer: 0, throttle: 0, brake: 0, drift: 0 };
     window.addEventListener('keydown', (e) => this._key(e, true));
     window.addEventListener('keyup', (e) => this._key(e, false));
     window.addEventListener('blur', () => { this.keys.clear(); this._clearTouch(); });
@@ -100,14 +101,15 @@ export class Input {
     const pads = navigator.getGamepads ? navigator.getGamepads() : [];
     const pad = pads && Array.from(pads).find((p) => p && p.connected);
     const st = this.padState;
-    st.steer = 0; st.throttle = 0; st.brake = 0;
+    st.steer = 0; st.throttle = 0; st.brake = 0; st.drift = 0;
     if (!pad) return;
     const b = (i) => (pad.buttons[i] ? pad.buttons[i].value || (pad.buttons[i].pressed ? 1 : 0) : 0);
     let ax = pad.axes[0] || 0;
     if (Math.abs(ax) < 0.15) ax = 0;
     st.steer = ax + (b(15) - b(14));
     st.throttle = Math.max(b(7), b(0));
-    st.brake = Math.max(b(6), b(1), b(2));
+    st.brake = Math.max(b(6), b(1));
+    st.drift = b(2);
     const pressed = pad.buttons.map((x) => x.pressed);
     const edge = (i) => pressed[i] && !this.padPrev[i];
     if (edge(3)) this._emit('respawn');
@@ -125,10 +127,13 @@ export class Input {
     const right = k('right') || t.right;
     let steer = (right ? 1 : 0) - (left ? 1 : 0);
     if (this.padState.steer !== 0) steer = this.padState.steer;
-    const throttle = Math.max(k('gas') || t.gas ? 1 : 0, this.padState.throttle);
+    // the touch drift button sits above gas and counts as gas too, so a thumb
+    // can slide from one to the other without letting off
+    const throttle = Math.max(k('gas') || t.gas || t.drift ? 1 : 0, this.padState.throttle);
     const brake = Math.max(k('brake') || t.brake ? 1 : 0, this.padState.brake);
-    if (!this.enabled) return { steer: 0, throttle: 0, brake: 0 };
-    return { steer: Math.max(-1, Math.min(1, steer)), throttle, brake };
+    const drift = k('drift') || t.drift || this.padState.drift > 0.5 ? 1 : 0;
+    if (!this.enabled) return { steer: 0, throttle: 0, brake: 0, drift: 0 };
+    return { steer: Math.max(-1, Math.min(1, steer)), throttle, brake, drift };
   }
 
   anyDriveInput() {

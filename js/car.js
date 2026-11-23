@@ -51,6 +51,14 @@ export const CAR = {
   snapRate: 18,           // 1/s, direct orientation snap at full adhesion
   stickGrace: 0.25,       // s, adhesion keeps working after the wheels lose contact
   graceProbe: 2.4,        // m, how close the track must be for the grace pull
+  driftGrip: 0.62,        // share of rear sideways grip taken away while drifting
+  driftSteer: 1.3,        // how much more steering lock is left at speed while drifting
+  driftYaw: 0.7,          // extra yaw rate the stability assist allows while drifting
+  driftOn: 9,             // 1/s, how fast the rear lets go
+  driftOff: 6,            // 1/s, how fast grip comes back after letting go
+  driftAngle: 0.66,       // rad (~38°): past this slide angle the rear grips again, so drifts hold instead of spinning
+  driftPush: 9,           // m/s^2 along the slide with throttle, so a drift keeps its momentum
+  driftCarve: 1.6,        // 1/s, how fast the direction of travel swings round to the nose while drifting
   overspeed: 60,          // m/s above which extra drag kicks in
   overspeedDrag: 1.2,     // m/s^2 of extra drag per m/s over
 };
@@ -112,6 +120,8 @@ export class CarPhysics {
     this.hadNormal = false;
     this.stickTimer = 0;
     this.tilt = 0;
+    this.drift = 0;         // 0..1, how far the rear tyres have let go
+    this.slideAngle = 0;    // rad between where the car points and where it goes
   }
 
   reset(pos, quat, vel = null, angVel = null) {
@@ -131,6 +141,8 @@ export class CarPhysics {
     this.stickTimer = 0;
     this.adhesion = 0;
     this.tilt = 0;
+    this.drift = 0;
+    this.slideAngle = 0;
     this.slip = 0;
     this.impact = 0;
     this.speed = this.vel.length();
@@ -190,7 +202,17 @@ export class CarPhysics {
     const target = clamp(input.steer || 0, -1, 1);
     const rate = target === 0 ? 5 : (Math.sign(target) !== Math.sign(this.steer) ? 6.5 : 3.4);
     this.steer += clamp(target - this.steer, -rate * dt, rate * dt);
-    const steerAngle = this.steer * p.maxSteer / (1 + Math.abs(fs) / p.steerFalloff);
+    // drift (held button): the rear tyres let go on flat-ish ground only, never
+    // on walls, loops or ceilings where grip is what keeps the car up
+    const wantDrift = (input.drift || 0) > 0.5 && this.grounded > 0 && this.surfaceNormal.y > 0.8 && this.speed > 5 && fs > -2;
+    const dRate = wantDrift ? p.driftOn : p.driftOff;
+    this.drift += ((wantDrift ? 1 : 0) - this.drift) * Math.min(1, dRate * dt);
+    if (this.drift < 1e-3) this.drift = 0;
+    // slide angle between where the car points and where it is going
+    const slideAngle = this.speed > 2 ? Math.atan2(Math.abs(this.vel.dot(_left)), Math.max(0.5, Math.abs(fs))) : 0;
+    const driftLoss = p.driftGrip * this.drift * clamp((p.driftAngle - slideAngle) / 0.3, 0, 1);
+    this.slideAngle = slideAngle;
+    const steerAngle = this.steer * p.maxSteer / (1 + Math.abs(fs) / (p.steerFalloff * (1 + p.driftSteer * this.drift)));
 
     // --- gravity
     this.vel.y -= p.gravity * dt;
@@ -390,6 +412,11 @@ export class CarPhysics {
           jS *= s;
           jF *= s;
         }
+        // drifting: the rear tyres keep driving but hardly hold sideways
+        if (!w.front && driftLoss > 0) {
+          const latMax = maxJ * (1 - driftLoss);
+          if (Math.abs(jS) > latMax) jS = Math.sign(jS) * latMax;
+        }
         w.slip = Math.abs(vS);
         slipSum += Math.abs(vS);
         _j.copy(_ws).multiplyScalar(jS).addScaledVector(_wf, jF);
@@ -403,6 +430,28 @@ export class CarPhysics {
       }
     }
     this.slip = slipSum / 4;
+
+    // --- drift: the direction of travel carves round towards the nose, and
+    // with the throttle held the slide keeps its momentum
+    if (this.drift > 0 && grounded > 0) {
+      const vUp = this.vel.dot(_up);
+      _v.copy(this.vel).addScaledVector(_up, -vUp);              // velocity along the road
+      const sp = _v.length();
+      _t.copy(_fwd).addScaledVector(_up, -_fwd.dot(_up));          // nose along the road
+      if (sp > 2 && _t.lengthSq() > 1e-4) {
+        _t.normalize();
+        _wf.copy(_v).multiplyScalar(1 / sp);
+        const ang = Math.atan2(_up.dot(_ws.crossVectors(_wf, _t)), _wf.dot(_t));
+        if (Math.abs(ang) < Math.PI / 2) {
+          _sq.setFromAxisAngle(_up, ang * Math.min(1, p.driftCarve * this.drift * dt));
+          _v.applyQuaternion(_sq);
+        }
+        if (throttle > 0 && sp < p.topSpeed * 0.9) {
+          _v.addScaledVector(_v, (p.driftPush * this.drift * throttle * Math.min(1, slideAngle / 0.25) * dt) / sp);
+        }
+        this.vel.copy(_v).addScaledVector(_up, vUp);
+      }
+    }
 
     // --- boost pads
     if (this.boostTouched) this.boostTimer = p.boostTime;
@@ -435,8 +484,20 @@ export class CarPhysics {
       // stability assist: nudge yaw rate towards what the steering asks for
       if (grounded >= 3 && Math.abs(fs) > 3) {
         const yaw = this.angVel.dot(_up);
-        const desired = -fs * Math.tan(steerAngle) / 2.6;
+        const desired = -fs * Math.tan(steerAngle) / 2.6 * (1 + p.driftYaw * this.drift);
         this.angVel.addScaledVector(_up, (desired - yaw) * Math.min(1, p.yawAssist * dt));
+      }
+      // drift angle limiter: past the hold angle, rotation that would widen
+      // the slide is damped away, so a held drift circles instead of spinning.
+      // After letting go the limit drops, which catches the car straight.
+      const lim = wantDrift ? p.driftAngle : 0.1;
+      if (this.drift > 0 && slideAngle > lim) {
+        const beta = Math.atan2(this.vel.dot(_left), Math.max(0.5, Math.abs(fs)));
+        const yaw = this.angVel.dot(_up);
+        if (yaw * beta < 0) {
+          const k = Math.min(1, 12 * dt) * Math.min(1, (slideAngle - lim) / 0.12);
+          this.angVel.addScaledVector(_up, -yaw * k);
+        }
       }
     }
 
