@@ -6,6 +6,7 @@
   "type": "module",
   "scripts": {
     "start": "python3 -m http.server 8080",
-    "test": "node tools/simulate.mjs"
+    "test": "node tools/simulate.mjs",
+    "lint": "node tools/lint.mjs"
   }
 }

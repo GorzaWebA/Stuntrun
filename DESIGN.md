@@ -41,5 +41,6 @@ One signature motion: the bulbs around the logo chase on the main menu. The star
 - Sand ground, layered red-rock mesas on the horizon, saguaro cacti, desert scrub and rust-coloured rocks.
 - Warm afternoon light, peach horizon, a visible sun, flat soft clouds.
 - Gates are show signs: an ink frame, marquee bulbs, bunting, and painted lettering (START, CHECKPOINT, FINISH).
-- Open areas are concrete arena floor with red and bone edge stripes like the curbs. Obstacles use the same red, bone, yellow and ink.
+- Open areas are fenced arenas: concrete floor, a red and bone fence, and obstacles in the same red, bone, yellow and ink.
+- Every arena object has one job the driver can read at speed. Cones line you up or guide you to an exit. Barrier walls force a line, with chevron boards pointing at the gap. Tyre walls mark an apex, and sand on the outside punishes running wide. Wrecks are something to jump over. 3-2-1 boards mean brake here. Nothing goes in an arena just to fill space.
 - Effects stay low-poly: tyre smoke and dust as faceted puffs, sparks on impacts, confetti at the finish.

@@ -15,7 +15,12 @@ It's a static site with no build step, so GitHub Pages can host it as-is.
 - **Weighty car physics.** A 1350 kg raycast-suspension car with real body roll and weight transfer. Its tyres break into a slide when you push too hard, and they grip less until the slide settles. It's slow to change direction at speed, so brake before corners.
 - **Stunt grip.** On walls, ceilings, loops and rolls the tyres grip harder the faster you go. Above about 90 km/h the car sticks, so you can ride vertical walls and drive upside down. Below about 65 km/h gravity wins and you drop off. In the air the nose follows the flight path, so landings stay clean.
 - **Stunt pieces.** Loops, corkscrews (a full 360° roll), upside-down sections, wall rides, near-vertical wall turns, small and big jumps, ramps, banked turns and boost pads.
-- **Open areas with obstacles.** Wide floor sections with no barriers, where you pick your own line around pillars, barriers and cones, over speed bumps and off jump wedges. On raised platforms the open edges have a low safety rail.
+- **Stunt arenas.** Fenced open floors, each built around one idea, where you pick your own line:
+  - *Jump arena:* cones line you up on a ramp over a row of wrecked cars, or you take the bumpy chicken lane round the side.
+  - *Chicane arena:* two staggered walls with arrow boards pointing at the gaps, and 3-2-1 brake boards before the first wall. Cutting close to the wall tips is the fast line.
+  - *Turn arena:* a wide corner round a tyre-wall infield, with a sand trap on the outside if you run wide.
+  - *Landing arena:* a painted landing zone after a big jump, with cones guiding you to the exit.
+- **Tracks built for a heavy car.** Every corner is picked for the speed you arrive with, so you only need to brake hard where brake boards tell you to.
 - **An 11-act stunt show**, from *Opening Act* to *Grand Finale*. Each act has gold, silver and bronze medal times, and its ticket shows a sketch of the route.
 - **Stunt callouts.** "Big air", "Wall ride!" and "Upside down!" stamp onto the screen as you pull them off.
 - **Effects.** Tyre smoke when you slide, dust on the sand, a dust ring when you land a jump, sparks when you scrape a wall and confetti cannons at the finish.
@@ -66,7 +71,9 @@ Every track needs one **Start** and at least one **Finish**. To finish, you have
 | Height | Ramp (+1 level over 2 tiles), Long ramp (+2 levels over 3 tiles). Rotated by 180° they work as downhills. |
 | Air | Jump (small kicker), Big jump (2-tile kicker that launches you far) |
 | Stunts | Loop left / right, Wall turn (2×2), Wide wall turn (3×3), Wall ride left / right (6 tiles), Corkscrew (360° roll, 7 tiles), Upside down (8 tiles, about 60 m driven on the ceiling) |
-| Open areas | Open floor, Pillar, Barrier, Cones, Speed bumps, Jump wedge. These are 1×1 floor tiles with no barriers that join on all four sides, so you can lay out wide plazas. |
+| Arenas | Jump arena (3×3), Chicane arena (3×5), Turn arena (3×3, rotate for a right turn), Landing arena (3×4). Fenced set pieces with their obstacles already laid out around a racing line. |
+| Signs | Brake board 3, 2 and 1: straights with countdown boards. Put them in that order before a corner that needs braking. |
+| Open floor | Open floor, Pillar, Barrier, Cone lane, Speed bumps, Jump wedge. These are 1×1 floor tiles with no barriers that join on all four sides, so you can lay out your own open areas. |
 
 Wall turns, wall rides, corkscrews and upside-down sections roll the road around the car, so they need room below. Build them at least **2 levels up** (use ▲ in the editor). They need speed: arrive fast, or you'll fall off.
 
@@ -136,20 +143,29 @@ Campaign tracks are written in a small "turtle" script in `js/tracks.js`. Each t
 | `P` `PL` `PR` | open floor; `PL` / `PR` turn the route left / right inside the open area |
 | `PB` `PJ` `PC` `PWL` `PWR` `PP` | open floor with speed bumps / jump wedge / cones / barrier on the left / barrier on the right / pillar |
 | `X/n` | widen with open floor to `n` tiles, for example `PB/5` |
+| `AJ` `AC` `ATL` `ATR` `AL` | jump arena, chicane arena, turn arena left / right, landing arena |
+| `BRK` | three brake-board straights (3, 2, 1) |
 | `<X` `>>X` | place a piece 1 tile left / 2 tiles right of the previous one without moving on, for example `<<PP` |
 | `X*n` | repeat a token, for example `S*4` |
 
 For example, `S*2 U2 S*2 B S INV S*2 D2 S F` gives: two straights, a long ramp up two levels, two straights, a booster, a straight, an upside-down section, two straights, a long ramp back down, a straight and the finish.
 
-Design tips from building the campaign:
+Design rules from building the campaign (the full list is at the top of `js/tracks.js`):
 
-- Give jumps a long landing zone (four or more straights). A booster right before a kicker can carry you over everything.
-- Don't put a checkpoint where cars are still in the air after a jump. You have to drive through the gate.
-- Put a booster and a couple of straights before rolls and wall turns so cars arrive fast and centred.
-- The car is heavy. Leave room to brake before tight corners, especially after a jump, because you can't brake in the air.
-- Where an open area turns, use `PL` / `PR` and make it at least 3 wide so drivers can take a wider line.
+- **Pick the corner for the arrival speed.** Flat out on a straight is about 190 km/h. The fastest you can hold through each corner is roughly: tight turn 85 km/h, turn 125, wide turn 150, wide banked turn 165, turn arena 135. After a long straight, use wide or banked turns. Save normal turns for after something slow.
+- **Signpost real braking.** Braking from 190 to 125 km/h takes about 40 m, two tiles. Where a corner needs that, put `BRK` in front of it.
+- **Give stunts a straight run-in.** Upside-down sections need at least 115 km/h, so put a booster before them. Never put a corkscrew straight out of a turn.
+- **Give jumps a landing zone.** Use a landing arena (`AL`) after big jumps. Don't put a checkpoint where cars are still in the air.
+- **Open floor needs a reason.** Use the arenas rather than scattering obstacle tiles.
 
-After adding a track, run `npm test` to check it can be finished, and `node tools/simulate.mjs --medals` to get medal times.
+After adding a track:
+
+```bash
+npm test                          # can every track be finished?
+node tools/lint.mjs               # does any corner ask for too much braking for its act?
+node tools/simulate.mjs --medals  # medal times
+node tools/handling.mjs           # re-measure the car's limits after a physics change
+```
 
 ## Project structure
 
@@ -164,6 +180,7 @@ js/track.js           track builder, route finder, turtle scripts, share codes
 js/tracks.js          campaign tracks and medal times
 js/race.js            race rules: timer, checkpoints, finish, respawn
 js/editor.js          track editor
+js/arenas.js          fenced stunt arenas (jump, chicane, turn, landing)
 js/scenery.js         sky, lights, desert ground, mesas, cacti, clouds
 js/carModel.js        low-poly car mesh and livery
 js/signs.js           painted gate signs (canvas textures)
@@ -175,7 +192,7 @@ js/audio.js           WebAudio engine/tyre/impact sounds and generative music
 js/ghost.js           ghost recording and playback
 js/bot.js             autopilot (menu demo and track tests)
 js/storage.js         localStorage helpers (best times, ghosts, tracks, settings)
-tools/                headless simulator and ASCII map tool
+tools/                simulator, track lint, handling measurements, ASCII map
 vendor/               three.js r170 (MIT licence)
 assets/               app icons and self-hosted fonts
 DESIGN.md             art direction: palette, type, shapes, motion, world

@@ -6,6 +6,7 @@ import * as THREE from '../vendor/three.module.min.js';
 import { TILE, LEVEL, ROAD_HALF, CURB_W, LINE_W, DECK_T, COLORS } from './config.js';
 import { SURF } from './collision.js';
 import { MeshBuilder } from './geometry.js';
+import { ARENA_DEFS, cone, brakeBoard } from './arenas.js';
 
 const T = TILE;
 const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
@@ -222,21 +223,6 @@ function hazardBlock(mb, x0, y0, z0, x1, y1, z1, color, bands = 0) {
   }
 }
 
-function cone(mb, x, z, s = 1) {
-  const r = 0.5 * s, hgt = 1.1 * s, segs = 6;
-  mb.box(x - r * 1.2, 0, z - r * 1.2, x + r * 1.2, 0.12 * s, z + r * 1.2, 0x2a1f33, SURF.WALL);
-  const apex = V(x, hgt, z);
-  for (let i = 0; i < segs; i++) {
-    const a0 = (i / segs) * Math.PI * 2, a1 = ((i + 1) / segs) * Math.PI * 2;
-    const p0 = V(x + Math.cos(a0) * r, 0.12 * s, z + Math.sin(a0) * r), p1 = V(x + Math.cos(a1) * r, 0.12 * s, z + Math.sin(a1) * r);
-    const m0 = V().lerpVectors(p0, apex, 0.45), m1 = V().lerpVectors(p1, apex, 0.45);
-    const n0 = V().lerpVectors(p0, apex, 0.62), n1 = V().lerpVectors(p1, apex, 0.62);
-    mb.quad(p1, p0, m0, m1, 0xe8552a, SURF.WALL);
-    mb.quad(m1, m0, n0, n1, 0xf6ead2, SURF.WALL);
-    mb.tri(n1, n0, apex, 0xe8552a, SURF.WALL);
-  }
-}
-
 function bump(mb, zc) {
   // speed bump across the whole tile (drivable)
   const h = T / 2, l = 1.4, ht = 0.32;
@@ -276,8 +262,9 @@ const OPEN_DEFS = [
   },
   {
     id: 'plazaCones',
-    ...plazaDef('Cones', (mb) => {
-      for (const [x, z] of [[-6, -4], [-7.2, -2.2], [-5, -2.4], [6, 3], [7.2, 4.8], [5, 5]]) cone(mb, x, z);
+    // two cone lines marking a 14 m lane through the tile
+    ...plazaDef('Cone lane', (mb) => {
+      for (const x of [-7, 7]) for (let z = -8; z <= 8.1; z += 4) cone(mb, x, z);
     }),
   },
   { id: 'plazaBumps', ...plazaDef('Speed bumps', (mb) => { bump(mb, -5); bump(mb, 5); }) },
@@ -323,6 +310,21 @@ const DEFS = [
   { id: 'corkscrew', name: 'Corkscrew', ...rollDef(7, (t) => 2 * Math.PI * ease(t)) },
   { id: 'inverted', name: 'Upside down', ...rollDef(8, (t) => Math.PI * plateau(t, 0.32)) },
   ...OPEN_DEFS,
+  // fenced stunt arenas (several tiles each)
+  ...ARENA_DEFS,
+  // straights with 3-2-1 brake boards either side, placed before turns that need braking
+  ...[3, 2, 1].map((n) => ({
+    id: `brake${n}`,
+    name: `Brake board ${n}`,
+    conns: STRAIGHT_CONNS,
+    ribbons: () => [straightRibbon()],
+    extra: (mb) => {
+      for (const x of [9.6, -9.6]) {
+        mb.box(Math.min(x, Math.sign(x) * 8), -0.45, -0.25, Math.max(x, Math.sign(x) * 8), -0.15, 0.25, COLORS.gateFrame);
+        brakeBoard(mb, x, 0, n, { y0: -0.6, scale: 1.4, solid: false });
+      }
+    },
+  })),
 ];
 
 export const PIECE_ORDER = DEFS.map((d) => d.id);
@@ -546,6 +548,7 @@ export function pieceData(id) {
         const capE = i === ribbons.length - 1 ? (mask & 2) !== 0 : null;
         buildRibbon(mb, rib, frameSets[i], capS, capE, i === 0 && (taper & 1) !== 0, i === ribbons.length - 1 && (taper & 2) !== 0);
       });
+      if (def.extra) def.extra(mb);
       v = mb.toData();
       variantCache.set(key, v);
     }

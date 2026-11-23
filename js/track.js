@@ -84,7 +84,8 @@ export function buildTrack(def, { collision = true, gates = true } = {}) {
     cs.forEach((c, k) => {
       const nb = neighbour(c);
       if (!nb) mask |= 1 << k;
-      else if (!data.def.build && PIECES[pieces[nb.piece].type].build) taper |= 1 << k; // road meets open floor
+      // road meets open floor: barriers ramp down (not into a fenced arena, whose fence carries on)
+      else if (!data.def.build && PIECES[pieces[nb.piece].type].build && !PIECES[pieces[nb.piece].type].fenced) taper |= 1 << k;
     });
     acc.add(data.variant(mask, taper, p.y > 0), m, world);
     if (data.glow) glowAcc.add(data.glow, m, null);
@@ -234,6 +235,9 @@ export function computeRoute(def) {
 //   bumps, PJ jump wedge, PC cones, PWL PWR barrier on the left/right, PP pillar.
 //   "P/5" adds open floor beside the piece (total width 5); "<PP" / ">>PC"
 //   place a piece 1 / 2 tiles left / right of the last piece.
+//   BRK brake boards: three straights with 3-2-1 boards before a turn
+//   Arenas (fenced, 3 tiles wide, see arenas.js): AJ jump over wrecks,
+//   AC chicane, ATL ATR wide turn with a sand trap, AL landing zone.
 export function buildFromScript(script, opts = {}) {
   let x = opts.x ?? 0, z = opts.z ?? 0, y = opts.y ?? 0, d = opts.d ?? 0;
   const pieces = [];
@@ -280,10 +284,14 @@ export function buildFromScript(script, opts = {}) {
     P: ['plaza', 0], PL: ['plaza', 0, 2], PR: ['plaza', 0, 3], PP: ['plazaPillar', 0],
     PWR: ['plazaWall', 0], PWL: ['plazaWall', 1], PC: ['plazaCones', 0], PB: ['plazaBumps', 0], PJ: ['plazaJump', 0],
     BK: ['bigkick', 0], WL2: ['wall2', 0], WR2: ['wall2', 1], WL3: ['wall3', 0], WR3: ['wall3', 1],
+    B3: ['brake3', 0], B2: ['brake2', 0], B1: ['brake1', 0],
+    AJ: ['arenaJump', 0], AC: ['arenaChicane', 0], ATL: ['arenaTurn', 0], ATR: ['arenaTurn', 1], AL: ['arenaLanding', 0],
     VL: ['wallL', 0], VR: ['wallR', 0], CS: ['corkscrew', 0], INV: ['inverted', 0],
   };
   place('start', 0);
-  for (const raw of script.trim().split(/\s+/)) {
+  // BRK: the three brake board straights (3, 2, 1) leading into a turn
+  const tokens = script.trim().split(/\s+/).flatMap((t) => (t === 'BRK' ? ['B3', 'B2', 'B1'] : [t]));
+  for (const raw of tokens) {
     if (!raw) continue;
     // side tiles: "<PP" one tile left of the last piece, ">>PC" two tiles right
     const side = raw.match(/^(<+|>+)(.+)$/);
