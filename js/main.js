@@ -260,7 +260,7 @@ class Game {
     list.innerHTML = '';
     if (tab === 'campaign') {
       CAMPAIGN.forEach((t, i) => {
-        const best = storage.best(`c${PHYSICS_VERSION}.${t.id}`);
+        const best = storage.best(campaignKey(t));
         const medal = medalFor(best?.time, t.medals);
         const wrap = document.createElement('div');
         wrap.className = 'ticket-wrap';
@@ -415,7 +415,7 @@ class Game {
     this.updateViewOffset();
     this.audio.setMusicMode('race', opts.kind === 'campaign' ? (opts.index ?? 0) + 1 : parseInt(hashString(encodeTrack({ name: '', pieces: def.pieces })), 36) % 1000);
     const track = this.loadTrack(def);
-    const key = opts.kind === 'campaign' ? `c${PHYSICS_VERSION}.${def.id}` : customKey(def);
+    const key = opts.kind === 'campaign' ? campaignKey(def) : customKey(def);
     const race = new Race(track);
     this.session = {
       kind: opts.kind, index: opts.index, entry: opts.entry, def, key, race,
@@ -935,6 +935,12 @@ class Game {
     this.scenery.update(dt, _ipos, this.camera);
     this.updateHud();
   }
+}
+
+// Best times and ghosts belong to one layout: when a campaign track is
+// rebuilt its key changes, so old ghosts never drive through thin air.
+function campaignKey(t) {
+  return `c${PHYSICS_VERSION}.${t.id}.${hashString(t.script)}`;
 }
 
 function customKey(def) {
