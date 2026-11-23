@@ -121,13 +121,24 @@ export class CarPhysics {
     this.angVel.set(0, 0, 0);
     if (vel) this.vel.copy(vel);
     if (angVel) this.angVel.copy(angVel);
+    // forget everything about the moment before (grip, sliding, the surface
+    // the car was stuck to) so a respawn starts clean
     this.steer = 0;
     this.boostTimer = 0;
+    this.boostTouched = false;
     this.airTime = 0;
     this.hadNormal = false;
     this.stickTimer = 0;
+    this.adhesion = 0;
+    this.tilt = 0;
+    this.slip = 0;
+    this.impact = 0;
+    this.speed = this.vel.length();
+    this.fwdSpeed = 0;
     this.surfaceRate.set(0, 0, 0);
-    for (const w of this.wheels) { w.contact = false; w.comp = 0; w.load = 0; }
+    this.surfaceNormal.set(0, 1, 0);
+    this.prevNormal.set(0, 1, 0);
+    for (const w of this.wheels) { w.contact = false; w.comp = 0; w.load = 0; w.slip = 0; w.sliding = false; w.spin = 0; }
   }
 
   getState() {

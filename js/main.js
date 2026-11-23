@@ -1,7 +1,7 @@
 // Stuntrun – game bootstrap, state machine, HUD and menus.
 import * as THREE from '../vendor/three.module.min.js';
 import { PHYS_DT, CAR_COLORS, COLORS, PHYSICS_VERSION } from './config.js';
-import { buildTrack, disposeTrack, computeRoute, encodeTrack, decodeTrack, hashString } from './track.js';
+import { buildTrack, disposeTrack, computeRoute, encodeTrack, decodeTrack, hashString, placeCones } from './track.js';
 import { CAMPAIGN } from './tracks.js';
 import { Race } from './race.js';
 import { Bot } from './bot.js';
@@ -204,13 +204,68 @@ class Game {
   loadTrack(def) {
     if (this.track && this.track.def === def) {
       for (const cp of this.track.checkpoints) cp.setDone?.(false);
+      this.resetCones();
       return this.track;
     }
+    this.coneAnims = [];
     if (this.track) disposeTrack(this.track);
     this.track = buildTrack(def);
     this.scene.add(this.track.group);
     this.scenery.buildDecor(this.track);
     return this.track;
+  }
+
+  // ------------------------------------------------------------------ cones
+  resetCones() {
+    this.coneAnims = [];
+    const t = this.track;
+    if (t && t.coneMesh) placeCones(t.coneMesh, t.cones);
+  }
+
+  // a clipped cone flies off, tumbles, bounces and ends up on its side
+  knockCone(index, car, speed) {
+    const c = this.track?.cones[index];
+    if (!c) return;
+    const r = () => Math.random() - 0.5;
+    this.coneAnims.push({
+      index, base: c.y,
+      pos: c.clone(),
+      vel: car.vel.clone().multiplyScalar(0.6).add(new THREE.Vector3(r() * 4, 4 + Math.random() * 3 + speed * 0.04, r() * 4)),
+      axis: new THREE.Vector3(r(), r() * 0.4, r()).normalize(),
+      angle: 0, spin: 8 + Math.random() * 10, done: false,
+    });
+    this.audio.impact(Math.min(7, 3.5 + speed * 0.05));
+  }
+
+  updateCones(dt) {
+    const mesh = this.track?.coneMesh;
+    if (!mesh || !this.coneAnims?.length) return;
+    for (const a of this.coneAnims) {
+      if (a.done) continue;
+      a.vel.y -= 18 * dt;
+      a.pos.addScaledVector(a.vel, dt);
+      a.angle += a.spin * dt;
+      const rest = a.base + 0.45;
+      if (a.pos.y < rest && a.vel.y < 0) {
+        a.pos.y = rest;
+        a.vel.y *= -0.3;
+        a.vel.x *= 0.55; a.vel.z *= 0.55;
+        a.spin *= 0.5;
+        if (a.vel.length() < 1.2) {
+          // lie down on its side, pointing the way it was tumbling
+          a.done = true;
+          a.axis.y = 0;
+          if (a.axis.lengthSq() < 1e-4) a.axis.set(1, 0, 0);
+          a.axis.normalize();
+          a.angle = Math.PI / 2;
+        }
+      }
+      _cq.setFromAxisAngle(a.axis, a.angle);
+      _cm.compose(a.done ? _cv.set(a.pos.x, a.base + 0.5, a.pos.z) : a.pos, _cq, _cs);
+      mesh.setMatrixAt(a.index, _cm);
+    }
+    mesh.instanceMatrix.needsUpdate = true;
+    if (this.coneAnims.every((a) => a.done) && this.coneAnims.length > 40) this.coneAnims = this.coneAnims.slice(-40);
   }
 
   unloadTrack() {
@@ -443,6 +498,7 @@ class Game {
     for (const cp of this.track.checkpoints) cp.setDone?.(false);
     this.fx.clear();
     s.race.reset();
+    this.resetCones();
     s.recorder.reset();
     s.ghost = s.ghostData && this.settings.ghost ? new GhostPlayer(s.ghostData) : null;
     s.phase = 'countdown';
@@ -832,6 +888,7 @@ class Game {
       s.prevQuat.copy(car.quat);
       const inp = attract ? s.bot.update(car) : input;
       const events = race.step(inp);
+      for (const e of events) if (e.type === 'cone') this.knockCone(e.index, car, e.speed);
       if (!attract) {
         for (const e of events) this.onRaceEvent(e);
         if (race.state === 'racing') s.recorder.record(race.time, car.pos, car.quat);
@@ -857,6 +914,7 @@ class Game {
       if ((s.finishedAt && this.time - s.finishedAt > 2.5) || s.idle > 3 || (s.bot.offTrack > 25 && car.grounded > 0)) {
         race.reset();
         race.begin();
+        this.resetCones();
         s.bot.reset();
         s.finishedAt = null;
         s.idle = 0;
@@ -865,6 +923,7 @@ class Game {
       }
       this.fx.emitCar(car, dt);
       this.fx.update(dt);
+      this.updateCones(dt);
       this.chase.update(dt, car, _ipos, _iquat);
       this.scenery.update(dt, _ipos, this.camera);
       return;
@@ -893,6 +952,7 @@ class Game {
     }
     this.fx.emitCar(car, dt);
     this.fx.update(dt);
+    this.updateCones(dt);
     if (car.boostTouched && !s.wasBoosting) this.audio.boost();
     s.wasBoosting = car.boostTouched;
     const inp = input || { throttle: 0, brake: 0 };
@@ -939,6 +999,8 @@ class Game {
 
 // Best times and ghosts belong to one layout: when a campaign track is
 // rebuilt its key changes, so old ghosts never drive through thin air.
+const _cq = new THREE.Quaternion(), _cm = new THREE.Matrix4(), _cv = new THREE.Vector3(), _cs = new THREE.Vector3(1, 1, 1);
+
 function campaignKey(t) {
   return `c${PHYSICS_VERSION}.${t.id}.${hashString(t.script)}`;
 }

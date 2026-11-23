@@ -1,7 +1,8 @@
 // Stunt arenas: fenced open-floor set pieces several tiles big. Each one is
 // laid out around a racing line, and every object in it has one job that the
 // player can read from where they are driving:
-//   cones          line you up (funnels) or guide you to an exit
+//   cones          line you up (funnels) or guide you to an exit; they get
+//                  knocked flying if you clip them (a little speed lost)
 //   ramp + wrecks  the jump, with a slower bumpy "chicken lane" round the side
 //   barrier walls  force a weave; chevron boards point at the gap
 //   3-2-1 boards   brake here
@@ -12,6 +13,7 @@
 import * as THREE from '../vendor/three.module.min.js';
 import { TILE, DECK_T, COLORS } from './config.js';
 import { SURF } from './collision.js';
+import { MeshBuilder } from './geometry.js';
 
 const T = TILE;
 const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
@@ -56,19 +58,28 @@ function prism(mb, cx, cz, r, n, y0, y1, color, surf = -1, topColor = color) {
   }
 }
 
-export function cone(mb, x, z, s = 1) {
-  const r = 0.5 * s, hgt = 1.1 * s, segs = 6;
-  mb.box(x - r * 1.2, 0, z - r * 1.2, x + r * 1.2, 0.12 * s, z + r * 1.2, ARENA.ink, SURF.WALL);
-  const apex = V(x, hgt, z);
+// Cones are knock-over props, not static track: pieces only record where they
+// stand, and the track builder turns them into one instanced mesh.
+export function cone(mb, x, z) {
+  (mb.cones ||= []).push([x, z]);
+}
+
+// One cone at the origin, standing on y = 0.
+export function coneGeometryData() {
+  const mb = new MeshBuilder();
+  const r = 0.5, hgt = 1.1, segs = 6;
+  mb.box(-r * 1.2, 0, -r * 1.2, r * 1.2, 0.12, r * 1.2, ARENA.ink);
+  const apex = V(0, hgt, 0);
   for (let i = 0; i < segs; i++) {
     const a0 = (i / segs) * Math.PI * 2, a1 = ((i + 1) / segs) * Math.PI * 2;
-    const p0 = V(x + Math.cos(a0) * r, 0.12 * s, z + Math.sin(a0) * r), p1 = V(x + Math.cos(a1) * r, 0.12 * s, z + Math.sin(a1) * r);
+    const p0 = V(Math.cos(a0) * r, 0.12, Math.sin(a0) * r), p1 = V(Math.cos(a1) * r, 0.12, Math.sin(a1) * r);
     const m0 = V().lerpVectors(p0, apex, 0.45), m1 = V().lerpVectors(p1, apex, 0.45);
     const n0 = V().lerpVectors(p0, apex, 0.62), n1 = V().lerpVectors(p1, apex, 0.62);
-    mb.quad(p1, p0, m0, m1, ARENA.cone, SURF.WALL);
-    mb.quad(m1, m0, n0, n1, ARENA.bone, SURF.WALL);
-    mb.tri(n1, n0, apex, ARENA.cone, SURF.WALL);
+    mb.quad(p1, p0, m0, m1, ARENA.cone);
+    mb.quad(m1, m0, n0, n1, ARENA.bone);
+    mb.tri(n1, n0, apex, ARENA.cone);
   }
+  return mb.toData();
 }
 
 // cones every `gap` metres along a line
@@ -228,17 +239,24 @@ function arenaShell(mb, { w = 1, len, sand = () => false, openings, mask, conns,
     }
     // fence with gaps where a connected road comes in
     const len2 = a.distanceTo(b), dir = V().subVectors(b, a).normalize();
+    // the gap is a little wider than the road so no fence end can stick into it
     const gaps = openings.filter((o, k) => o.edge === name && !(mask & (1 << conns[k])))
-      .map((o) => [o.at - o.width / 2, o.at + o.width / 2]);
+      .map((o) => [o.at - o.width / 2 - 0.6, o.at + o.width / 2 + 0.6]).sort((p, q) => p[0] - q[0]);
+    const runs = [];
+    let from = 0;
+    for (const [g0, g1] of gaps) { if (g0 > from) runs.push([from, g0]); from = Math.max(from, g1); }
+    if (from < len2) runs.push([from, len2]);
     const inward = V().copy(out).multiplyScalar(-1);
-    const seg = 2.5;
-    for (let d = 0; d < len2 - 0.01; d += seg) {
-      const d1 = Math.min(len2, d + seg), mid = (d + d1) / 2;
-      if (gaps.some(([g0, g1]) => mid > g0 && mid < g1)) continue;
-      const p0 = V().copy(a).addScaledVector(dir, d), p1 = V().copy(a).addScaledVector(dir, d1);
-      const q0 = V().copy(p0).addScaledVector(inward, 0.6), q1 = V().copy(p1).addScaledVector(inward, 0.6);
-      const xs = [p0.x, p1.x, q0.x, q1.x], zs = [p0.z, p1.z, q0.z, q1.z];
-      mb.box(Math.min(...xs), 0, Math.min(...zs), Math.max(...xs), 1.0, Math.max(...zs), Math.round(d / seg) % 2 ? ARENA.fenceB : ARENA.fenceA, SURF.WALL);
+    let k = 0;
+    for (const [r0, r1] of runs) {
+      const n = Math.max(1, Math.round((r1 - r0) / 2.5));
+      for (let i = 0; i < n; i++, k++) {
+        const d = r0 + (r1 - r0) * i / n, d1 = r0 + (r1 - r0) * (i + 1) / n;
+        const p0 = V().copy(a).addScaledVector(dir, d), p1 = V().copy(a).addScaledVector(dir, d1);
+        const q0 = V().copy(p0).addScaledVector(inward, 0.6), q1 = V().copy(p1).addScaledVector(inward, 0.6);
+        const xs = [p0.x, p1.x, q0.x, q1.x], zs = [p0.z, p1.z, q0.z, q1.z];
+        mb.box(Math.min(...xs), 0, Math.min(...zs), Math.max(...xs), 1.0, Math.max(...zs), k % 2 ? ARENA.fenceB : ARENA.fenceA, SURF.WALL);
+      }
     }
   }
   return { X0, X1, Z0, Z1 };

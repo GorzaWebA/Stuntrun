@@ -9,6 +9,7 @@ import {
   PIECES, PIECE_ORDER, pieceData, worldConnectors, worldCells, pieceMatrix, rotOffset, openRoute, DIR_X, DIR_Z,
 } from './pieces.js';
 import { signTexture } from './signs.js';
+import { coneGeometryData } from './arenas.js';
 
 let _mats = null;
 export function trackMaterials() {
@@ -32,6 +33,9 @@ function gateGeometries(type) {
   }
   return g;
 }
+
+let _coneGeo = null;
+const coneGeometry = () => (_coneGeo ||= dataToGeometry(coneGeometryData()));
 
 let _signPlane = null;
 const signPlane = () => (_signPlane ||= new THREE.PlaneGeometry(16.8, 1.3));
@@ -75,6 +79,7 @@ export function buildTrack(def, { collision = true, gates = true } = {}) {
   const bounds = new THREE.Box3();
   const occupied = new Set();
   const tmp = new THREE.Vector3();
+  const cones = [];
 
   pieces.forEach((p, i) => {
     const data = pieceData(p.type);
@@ -84,10 +89,12 @@ export function buildTrack(def, { collision = true, gates = true } = {}) {
     cs.forEach((c, k) => {
       const nb = neighbour(c);
       if (!nb) mask |= 1 << k;
-      // road meets open floor: barriers ramp down (not into a fenced arena, whose fence carries on)
-      else if (!data.def.build && PIECES[pieces[nb.piece].type].build && !PIECES[pieces[nb.piece].type].fenced) taper |= 1 << k;
+      // road meets open floor (arenas too): the curbs ramp down so there is no square end to hit
+      else if (!data.def.build && PIECES[pieces[nb.piece].type].build) taper |= 1 << k;
     });
-    acc.add(data.variant(mask, taper, p.y > 0), m, world);
+    const variant = data.variant(mask, taper, p.y > 0);
+    acc.add(variant, m, world);
+    if (variant.cones) for (const [cx, cz] of variant.cones) cones.push(new THREE.Vector3(cx, 0, cz).applyMatrix4(m));
     if (data.glow) glowAcc.add(data.glow, m, null);
     for (const s of data.supports) {
       tmp.set(s.x, s.y, s.z).applyMatrix4(m);
@@ -133,7 +140,10 @@ export function buildTrack(def, { collision = true, gates = true } = {}) {
           corners.push(new THREE.Vector3(x, y, z).applyMatrix4(m));
         }
         box.setFromPoints(corners);
-        const entry = { box, setDone, piece: i };
+        // where to put the car back: on the road at the gate, facing along the piece
+        const spawn = new THREE.Vector3(0, 0, gate.z).applyMatrix4(m);
+        const dir = new THREE.Vector3(0, 0, 1).transformDirection(m);
+        const entry = { box, setDone, piece: i, spawn, dir };
         if (gate.kind === 'checkpoint') checkpoints.push(entry); else finishes.push(entry);
       }
     }
@@ -150,10 +160,26 @@ export function buildTrack(def, { collision = true, gates = true } = {}) {
   mesh.receiveShadow = true;
   group.add(mesh);
   if (glowAcc.length) group.add(new THREE.Mesh(glowAcc.toGeometry(), mats.glow));
+  // cones: one instanced mesh, so knocked ones can fly off on their own
+  let coneMesh = null;
+  if (cones.length) {
+    coneMesh = new THREE.InstancedMesh(coneGeometry(), mats.lit, cones.length);
+    coneMesh.castShadow = true;
+    coneMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    placeCones(coneMesh, cones);
+    group.add(coneMesh);
+  }
   if (world) world.finalize();
   if (bounds.isEmpty()) bounds.set(new THREE.Vector3(-20, 0, -20), new THREE.Vector3(20, 0, 20));
 
-  return { def, group, world, start, checkpoints, finishes, bounds, occupied, triangles: acc.length / 9 };
+  return { def, group, world, start, checkpoints, finishes, bounds, occupied, cones, coneMesh, triangles: acc.length / 9 };
+}
+
+// Stands every cone back up (track build and restarts).
+export function placeCones(mesh, cones) {
+  const mm = new THREE.Matrix4();
+  cones.forEach((c, i) => mesh.setMatrixAt(i, mm.makeTranslation(c.x, c.y, c.z)));
+  mesh.instanceMatrix.needsUpdate = true;
 }
 
 export function disposeTrack(track) {
@@ -161,7 +187,7 @@ export function disposeTrack(track) {
   track.group.traverse((o) => {
     if (o.isMesh) {
       // gate geometries are shared/cached, only dispose the merged meshes
-      const shared = o.geometry === _signPlane || [...gateGeoCache.values()].some((g) => g.frame === o.geometry || g.banner === o.geometry || g.bulbs === o.geometry);
+      const shared = o.geometry === _signPlane || o.geometry === _coneGeo || [...gateGeoCache.values()].some((g) => g.frame === o.geometry || g.banner === o.geometry || g.bulbs === o.geometry);
       if (!shared) o.geometry.dispose();
       if (o.material && !Object.values(_mats).includes(o.material)) o.material.dispose();
     }

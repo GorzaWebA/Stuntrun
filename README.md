@@ -24,7 +24,8 @@ It's a static site with no build step, so GitHub Pages can host it as-is.
 - **An 11-act stunt show**, from *Opening Act* to *Grand Finale*. Each act has gold, silver and bronze medal times, and its ticket shows a sketch of the route.
 - **Stunt callouts.** "Big air", "Wall ride!" and "Upside down!" stamp onto the screen as you pull them off.
 - **Effects.** Tyre smoke when you slide, dust on the sand, a dust ring when you land a jump, sparks when you scrape a wall and confetti cannons at the finish.
-- **Checkpoints and respawn.** You respawn at the last checkpoint with the speed you had there.
+- **Checkpoints and respawn.** Press `R` (or ↺) to go back to the last checkpoint: you start again standing still, upright and facing down the track, so nothing from a crash carries over. Press it twice quickly to restart the run from the start.
+- **Knock-over cones.** Clip a cone and it goes flying. It costs you a little speed, not your run.
 - **Ghost replays.** Your best run is saved and races alongside you as a translucent car.
 - **Track editor.** Place, rotate, stack and erase 28 kinds of piece on a grid, test-drive the track straight away, save it on your device and share it with a link or a code.
 - **Mobile ready.** On-screen touch controls with multi-touch, layouts for landscape and portrait, fullscreen and installable as a home-screen app.

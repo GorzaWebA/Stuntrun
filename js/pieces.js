@@ -523,7 +523,7 @@ export function pieceData(id) {
       variant(mask, taper = 0, rail = false) {
         const key = mask | (rail ? 1 << 8 : 0);
         let v = variantCache.get(key);
-        if (!v) { const mb = new MeshBuilder(); def.build(mb, mask, rail); v = mb.toData(); variantCache.set(key, v); }
+        if (!v) { const mb = new MeshBuilder(); def.build(mb, mask, rail); v = mb.toData(); v.cones = mb.cones || []; variantCache.set(key, v); }
         return v;
       },
       glow: null,

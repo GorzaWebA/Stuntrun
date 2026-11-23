@@ -16,7 +16,9 @@ const STYLES = {
   aggressive: { latAccel: 21, brakeDecel: 14 },
 };
 
-export function simulate(def, { verbose = false, maxTime = 240, style = {} } = {}) {
+// respawnAtCheckpoints: right after each checkpoint, go back to it (standing
+// still) and carry on, to prove every checkpoint can be restarted from.
+export function simulate(def, { verbose = false, maxTime = 240, style = {}, respawnAtCheckpoints = false } = {}) {
   const track = buildTrack(def, { gates: false });
   const route = computeRoute(def);
   if (!route || !route.finished) return { ok: false, reason: 'route does not reach a finish' };
@@ -34,6 +36,7 @@ export function simulate(def, { verbose = false, maxTime = 240, style = {} } = {
     for (const e of events) {
       if (verbose && e.type === 'checkpoint') console.log(`   checkpoint ${e.count}/${race.checkpointCount} at ${e.time.toFixed(2)}s`);
       if (e.type === 'finish') return { ok: true, time: e.time, respawns, maxSpeed };
+      if (e.type === 'checkpoint' && respawnAtCheckpoints) { race.respawn(); respawns++; }
     }
     if (verbose && Math.floor(race.time) !== lastLog) {
       lastLog = Math.floor(race.time);
@@ -56,6 +59,9 @@ for (const t of list) {
   const overlaps = findOverlaps(t.pieces);
   const t0 = performance.now();
   const res = simulate(t, { verbose });
+  // every checkpoint has to work as a standing restart
+  const rs = simulate(t, { respawnAtCheckpoints: true });
+  if (!rs.ok) { failed++; console.log(`FAIL ${t.id.padEnd(12)} restarting from a checkpoint: ${rs.reason}`); }
   if (args.includes('--styles')) {
     for (const name of ['cautious', 'aggressive']) {
       const r = simulate(t, { style: STYLES[name] });

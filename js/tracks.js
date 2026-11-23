@@ -68,10 +68,11 @@ const RAW = [
     medals: [27.0, 31.5, 37.0],
   },
   {
-    // Loop, then wall turn into wall ride into ceiling, then a jump to land.
+    // Loop, then wall turn into wall ride into ceiling, a drop back to the
+    // ground and the wreck jump to finish.
     id: 'gravity-well', name: 'Free Fall', difficulty: 4,
-    script: 'S*2 B S OL S*2 C S U2 S*2 B S WR3 S*2 VR S*2 INV S*2 K G G AL S*2 D2 S*3 F',
-    medals: [28.0, 32.0, 38.0],
+    script: 'S*2 B S OL S*2 C S U2 S*2 B S WR3 S*2 VR S*2 INV S*2 D2 S*2 AJ S*3 F',
+    medals: [26.0, 30.0, 36.0],
   },
   {
     // Four levels up: a wall ride, a big jump, a corkscrew, a jump and a
