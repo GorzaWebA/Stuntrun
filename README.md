@@ -293,3 +293,4 @@ Best times, ghosts, settings and your own tracks are stored in the browser's `lo
 - All models, tracks, physics and sounds are generated in code. Apart from the fonts, the game uses no external art or audio assets.
 
 <img src="docs/readme/bunting.svg" width="100%" alt="">
+
