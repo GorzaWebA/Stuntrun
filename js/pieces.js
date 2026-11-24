@@ -49,13 +49,36 @@ function turnDef(N) {
 
 const HEART = 0.95; // height of the car's centre above the road
 
+// A 90° left turn that eases in and out: the curve starts straight, is
+// tightest in the middle and straightens again (curvature follows a sine),
+// scaled so it ends at exactly the same point as a circle of radius R.
+// Returns t -> { x, z, a } (a = heading, 0 = +Z, PI/2 = +X).
+function easedTurn(R) {
+  const n = 400, pts = [{ x: 0, z: 0, a: 0 }];
+  let x = 0, z = 0;
+  for (let i = 1; i <= n; i++) {
+    const am = (Math.PI / 2) * (1 - Math.cos(Math.PI * (i - 0.5) / n)) / 2;
+    x += Math.sin(am) / n;
+    z += Math.cos(am) / n;
+    pts.push({ x, z, a: (Math.PI / 2) * (1 - Math.cos(Math.PI * i / n)) / 2 });
+  }
+  const k = R / x; // by symmetry the end point has x = z
+  return (t) => {
+    const f = Math.min(n - 1e-9, Math.max(0, t * n)), i = Math.floor(f), u = f - i;
+    const p = pts[i], q = pts[i + 1];
+    return { x: (p.x + (q.x - p.x) * u) * k, z: (p.z + (q.z - p.z) * u) * k, a: p.a + (q.a - p.a) * u };
+  };
+}
+
 function bankDef(N, bankDeg, wall = false) {
   const R = (N - 0.5) * T;
   const bmax = bankDeg * Math.PI / 180;
-  // Banked turns pivot on the inner edge and bank with a sine. Wall turns bank up
-  // over the first 40% and hold, pivoting around the driver (the car's path
-  // stays level), so they need to be built at least two levels up.
-  const bank = wall ? (t) => bmax * plateau(t, 0.4) : (t) => bmax * Math.sin(Math.PI * t);
+  // Banked turns pivot on the inner edge and bank with a sine. Wall turns pivot
+  // around the driver (the car's path stays level), so they need to be built
+  // at least two levels up; their curve eases in and out with the bank, so the
+  // corner only gets tight once the wall is there to hold the car.
+  const bank = (t) => bmax * Math.sin(Math.PI * t);
+  const path = wall ? easedTurn(R) : null;
   return {
     conns: [{ x: 0, z: 0, y: 0, d: 2 }, { x: N - 1, z: N - 1, y: 0, d: 1 }],
     ribbons: () => [{
@@ -63,15 +86,16 @@ function bankDef(N, bankDeg, wall = false) {
       lanes: 6,
       curb: 1.0,
       pos: (t, o) => {
-        const a = t * Math.PI / 2, b = bank(t);
+        const b = bank(t);
         if (wall) {
-          const k = HEART * Math.sin(b);
-          return o.set(R - R * Math.cos(a) - Math.cos(a) * k, HEART * (1 - Math.cos(b)), -T / 2 + R * Math.sin(a) + Math.sin(a) * k);
+          const c = path(t), k = HEART * Math.sin(b);
+          return o.set(c.x - Math.cos(c.a) * k, HEART * (1 - Math.cos(b)), -T / 2 + c.z + Math.sin(c.a) * k);
         }
+        const a = t * Math.PI / 2;
         return o.set(R - R * Math.cos(a), (ROAD_HALF + 0.2) * Math.sin(b), -T / 2 + R * Math.sin(a));
       },
       up: (t, o) => {
-        const a = t * Math.PI / 2, b = bank(t);
+        const a = wall ? path(t).a : t * Math.PI / 2, b = bank(t);
         return o.set(Math.cos(a) * Math.sin(b), Math.cos(b), -Math.sin(a) * Math.sin(b));
       },
     }],
@@ -305,8 +329,8 @@ const DEFS = [
   { id: 'bigkick', ...kickerDef(2, 8, 'Big jump') },
   { id: 'wall2', name: 'Wall turn', ...bankDef(2, 75, true) },
   { id: 'wall3', name: 'Wide wall turn', ...bankDef(3, 82, true) },
-  { id: 'wallL', name: 'Wall ride L', ...rollDef(6, (t) => (Math.PI / 2) * plateau(t, 0.33)) },
-  { id: 'wallR', name: 'Wall ride R', ...rollDef(6, (t) => (-Math.PI / 2) * plateau(t, 0.33)) },
+  { id: 'wallL', name: 'Wall ride L', ...rollDef(9, (t) => (Math.PI / 2) * plateau(t, 0.38)) },
+  { id: 'wallR', name: 'Wall ride R', ...rollDef(9, (t) => (-Math.PI / 2) * plateau(t, 0.38)) },
   { id: 'corkscrew', name: 'Corkscrew', ...rollDef(7, (t) => 2 * Math.PI * ease(t)) },
   { id: 'inverted', name: 'Upside down', ...rollDef(8, (t) => Math.PI * plateau(t, 0.32)) },
   ...OPEN_DEFS,

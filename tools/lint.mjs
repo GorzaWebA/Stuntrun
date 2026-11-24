@@ -8,11 +8,11 @@ import { CAMPAIGN } from '../js/tracks.js';
 
 // constant-speed limits measured with tools/handling.mjs (km/h)
 const LIMIT = {
-  turn1: 85, turn2: 125, turn3: 150, bank2: 105, bank3: 165, wall2: 60, wall3: 200,
-  arenaTurn: 135, arenaChicane: 120,
+  turn1: 100, turn2: 150, turn3: 170, bank2: 130, bank3: 250, wall2: 230, wall3: 250,
+  arenaTurn: 150, arenaChicane: 120,
 };
 // minimum entry speeds for stunts (km/h)
-const MIN = { loopL: 85, loopR: 85, wallL: 75, wallR: 75, corkscrew: 85, inverted: 115, wall3: 60 };
+const MIN = { loopL: 90, loopR: 90, wallL: 60, wallR: 60, corkscrew: 60, inverted: 70, wall3: 50 };
 // how much braking a track of each difficulty may ask for going into a turn (km/h)
 const MAX_DROP = [0, 25, 35, 45, 60, 75];
 

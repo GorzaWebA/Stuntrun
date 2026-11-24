@@ -65,6 +65,7 @@ export class Bot {
     const vx = car.vel.dot(_left), vz = car.vel.dot(_fwd);
     const slip = speed > 4 ? Math.atan2(-vx, Math.max(0.1, vz)) : 0;
     const angle = Math.atan2(-x, Math.max(0.1, z)) - slip * this.slipComp;
+    this.angle = angle; // radians to the aim point (used by the handling tests)
     const maxSteer = car.p.maxSteer / (1 + speed / car.p.steerFalloff);
     const steer = car.grounded === 0 ? 0 : Math.max(-1, Math.min(1, (angle * this.gain) / maxSteer));
 

@@ -15,8 +15,11 @@ export const CAR = {
   bumpStart: 0.3,
   bumpK: 540000,
   rayLift: 0.6,
-  maxSteer: 0.46,
-  steerFalloff: 9,        // m/s at which max steering halves
+  maxSteer: 0.5,
+  steerFalloff: 11,        // m/s at which max steering halves
+  steerIn: 6,           // 1/s, how fast the wheel winds on towards full lock
+  steerReturn: 10,         // 1/s, how fast it centres when you let go
+  steerFlip: 11,         // 1/s, how fast it swings across to the other side
   accel: 11.5,              // m/s^2 at standstill
   topSpeed: 62,           // engine limit (m/s)
   reverseAccel: 9,
@@ -29,8 +32,12 @@ export const CAR = {
   bounceLimit: 1.5,       // m/s away from the track allowed while stuck to it
   stickMin: 10,           // m/s where adhesion starts
   stickMax: 26,           // m/s where adhesion is full
+  rollAidRate: 0.6,       // rad/s of track rotation at which the stunt aids are fully on
+  rollPull: 16,           // m/s^2 extra pull onto rolling track per lifted wheel
+  wallSteerCut: 0.5,      // how much gentler the steering is on fully tilted track at speed
+  wallHold: 0.85,         // share of the sideways pull down a wall that is cancelled at full stick
   stickPress: 15,         // extra m/s^2 pressing the car onto tilted track at speed
-  gripLat: 1.5,
+  gripLat: 2.0,
   gripLong: 1.3,
   slideGrip: 0.78,        // grip left once a tyre breaks into a slide
   slideStart: 2.2,        // m/s of sideways slip where a tyre lets go
@@ -42,7 +49,8 @@ export const CAR = {
   boostTime: 1.1,
   airYaw: 1.6,
   loadCap: 19000,
-  yawAssist: 0.8,
+  yawGripShare: 1,        // share of the tyres' grip the stability assist will turn with
+  yawAssist: 3,
   antiRoll: 36000,
   airRollDamp: 2.5,
   airPitchAlign: 2.2,
@@ -53,12 +61,12 @@ export const CAR = {
   graceProbe: 2.4,        // m, how close the track must be for the grace pull
   driftGrip: 0.62,        // share of rear sideways grip taken away while drifting
   driftSteer: 1.3,        // how much more steering lock is left at speed while drifting
-  driftYaw: 0.7,          // extra yaw rate the stability assist allows while drifting
+  driftYaw: 0.3,          // extra yaw rate the stability assist allows while drifting
   driftOn: 9,             // 1/s, how fast the rear lets go
   driftOff: 6,            // 1/s, how fast grip comes back after letting go
   driftAngle: 0.66,       // rad (~38°): past this slide angle the rear grips again, so drifts hold instead of spinning
-  driftPush: 9,           // m/s^2 along the slide with throttle, so a drift keeps its momentum
-  driftCarve: 1.6,        // 1/s, how fast the direction of travel swings round to the nose while drifting
+  driftPush: 12,           // m/s^2 along the slide with throttle, so a drift keeps its momentum
+  driftCarve: 1.0,        // 1/s, how fast the direction of travel swings round to the nose while drifting
   overspeed: 60,          // m/s above which extra drag kicks in
   overspeedDrag: 1.2,     // m/s^2 of extra drag per m/s over
 };
@@ -200,7 +208,7 @@ export class CarPhysics {
 
     // --- steering (input.steer: +1 = right)
     const target = clamp(input.steer || 0, -1, 1);
-    const rate = target === 0 ? 5 : (Math.sign(target) !== Math.sign(this.steer) ? 6.5 : 3.4);
+    const rate = target === 0 ? p.steerReturn : (Math.sign(target) !== Math.sign(this.steer) ? p.steerFlip : p.steerIn);
     this.steer += clamp(target - this.steer, -rate * dt, rate * dt);
     // drift (held button): the rear tyres let go on flat-ish ground only, never
     // on walls, loops or ceilings where grip is what keeps the car up
@@ -212,7 +220,10 @@ export class CarPhysics {
     const slideAngle = this.speed > 2 ? Math.atan2(Math.abs(this.vel.dot(_left)), Math.max(0.5, Math.abs(fs))) : 0;
     const driftLoss = p.driftGrip * this.drift * clamp((p.driftAngle - slideAngle) / 0.3, 0, 1);
     this.slideAngle = slideAngle;
-    const steerAngle = this.steer * p.maxSteer / (1 + Math.abs(fs) / (p.steerFalloff * (1 + p.driftSteer * this.drift)));
+    // on walls and ceilings the track does the turning and the wheel only
+    // places the car, so it is gentler there (late corrections don't overshoot)
+    const wallCut = 1 - p.wallSteerCut * this.tilt * this.adhesion;
+    const steerAngle = wallCut * this.steer * p.maxSteer / (1 + Math.abs(fs) / (p.steerFalloff * (1 + p.driftSteer * this.drift)));
 
     // --- gravity
     this.vel.y -= p.gravity * dt;
@@ -302,21 +313,7 @@ export class CarPhysics {
       _na.normalize();
       this.surfaceNormal.copy(_na);
       const f = fSpeed;
-      // how far the track is tilted away from "normal ground": the stunt aids
-      // only work on walls, ceilings, loops and rolls; flat roads stay realistic
-      const tilt = clamp((0.95 - _na.y) / 0.45, 0, 1);
-      this.tilt = tilt;
-      this.stickTimer = f > 0.3 ? p.stickGrace : 0;
-      const gAway = Math.max(0, -p.gravity * _na.y);
-      const a = f * (gAway + p.stickPress * tilt) + Math.min(p.downforceMax, p.downforce * this.speed * this.speed);
-      this.adhesion = f;
-      this.vel.addScaledVector(_na, -a * dt);
-      // magnetic: at speed the car can't bounce away from tilted track
-      const vn = this.vel.dot(_na);
-      if (vn > p.bounceLimit) this.vel.addScaledVector(_na, -(vn - p.bounceLimit) * f * tilt);
-
-      // surface alignment: turn the body (pitch/roll only) to match the track,
-      // including how fast the track itself is rotating (loops, rolls, walls)
+      // how fast the track itself is rotating (rolls, loops, walls)
       if (this.hadNormal) {
         _t.crossVectors(this.prevNormal, _na).multiplyScalar(1 / dt);
         this.surfaceRate.lerp(_t, 1 - Math.exp(-dt / 0.035));
@@ -324,6 +321,35 @@ export class CarPhysics {
         this.surfaceRate.set(0, 0, 0);
       }
       this.prevNormal.copy(_na);
+      // the stunt aids work on tilted track (walls, ceilings, loops) and on track
+      // that is rolling under the car (the start of a wall ride or roll), so
+      // the car turns with the road from the first moment; flat road and
+      // ordinary ramps stay realistic
+      const rolling = clamp(Math.abs(this.surfaceRate.dot(_fwd)) / p.rollAidRate, 0, 1);
+      const tilt = Math.max(clamp((0.95 - _na.y) / 0.45, 0, 1), rolling);
+      this.tilt = tilt;
+      this.stickTimer = f > 0.3 ? p.stickGrace : 0;
+      const gAway = Math.max(0, -p.gravity * _na.y);
+      // while the road rolls, an off-centre car has the road drop away under one
+      // side: pull it back down harder for every wheel that has lifted
+      const lifted = (4 - grounded) * rolling * f * p.rollPull;
+      const a = f * (gAway + p.stickPress * tilt) + lifted + Math.min(p.downforceMax, p.downforce * this.speed * this.speed);
+      this.adhesion = f;
+      this.vel.addScaledVector(_na, -a * dt);
+      // on walls and banks, gravity also drags the car sideways down the slope;
+      // at speed most of that is cancelled so a wall ride holds its line
+      // (gravity along the track stays, so loops still slow you going up)
+      _t.copy(_left).addScaledVector(_na, -_left.dot(_na));
+      if (_t.lengthSq() > 1e-4) {
+        _t.normalize();
+        this.vel.addScaledVector(_t, p.gravity * _t.y * f * tilt * p.wallHold * dt);
+      }
+      // magnetic: at speed the car can't bounce away from tilted track
+      const vn = this.vel.dot(_na);
+      if (vn > p.bounceLimit) this.vel.addScaledVector(_na, -(vn - p.bounceLimit) * f * tilt);
+
+      // surface alignment: turn the body (pitch/roll only) to match the track,
+      // including how fast the track itself is rotating (loops, rolls, walls)
       this.hadNormal = true;
       const strength = 0.15 + 0.85 * f * tilt;
       _v.copy(this.surfaceRate).addScaledVector(_up, -this.surfaceRate.dot(_up));   // desired = track rate
@@ -482,9 +508,16 @@ export class CarPhysics {
       this.airTime = 0;
       this.angVel.multiplyScalar(1 - 0.4 * dt);
       // stability assist: nudge yaw rate towards what the steering asks for
-      if (grounded >= 3 && Math.abs(fs) > 3) {
+      if (grounded >= 2 && Math.abs(fs) > 3) {
         const yaw = this.angVel.dot(_up);
-        const desired = -fs * Math.tan(steerAngle) / 2.6 * (1 + p.driftYaw * this.drift);
+        let desired = -fs * Math.tan(steerAngle) / 2.6 * (1 + p.driftYaw * this.drift);
+        // like stability control: never ask for more rotation than the tyres can
+        // hold, so full lock at speed runs wide instead of spinning the car
+        if (this.drift === 0) {
+          const press = p.gravity + Math.min(p.downforceMax, p.downforce * this.speed * this.speed);
+          const yawMax = (p.gripLat * press * p.yawGripShare) / Math.max(5, Math.abs(fs));
+          desired = clamp(desired, -yawMax, yawMax);
+        }
         this.angVel.addScaledVector(_up, (desired - yaw) * Math.min(1, p.yawAssist * dt));
       }
       // drift angle limiter: past the hold angle, rotation that would widen

@@ -27,7 +27,7 @@
 
 <table>
   <tr>
-    <td width="33%" valign="top"><img src="docs/readme/loop.jpg" alt="Halfway up a loop at 143 km/h"><br><b>Loop the loop.</b> Above about 85 km/h the tyres stick all the way round.</td>
+    <td width="33%" valign="top"><img src="docs/readme/loop.jpg" alt="Halfway up a loop at 143 km/h"><br><b>Loop the loop.</b> Above about 90 km/h the tyres stick all the way round.</td>
     <td width="33%" valign="top"><img src="docs/readme/wallride.jpg" alt="Riding a vertical wall at 231 km/h, with the Wall ride callout"><br><b>Wall of death.</b> Ride a vertical wall at full speed. Slow down and gravity wins.</td>
     <td width="33%" valign="top"><img src="docs/readme/ceiling.jpg" alt="Driving upside down at 214 km/h, with the Upside down callout"><br><b>Ceiling run.</b> Sixty metres upside down. Hit the booster first.</td>
   </tr>
@@ -64,7 +64,7 @@ Eleven acts, from a gentle opener to the full show. Each one has gold, silver an
 
 ### Driving
 
-- **Weighty car physics.** A 1350 kg raycast-suspension car with real body roll and weight transfer. Its tyres break into a slide when you push too hard, and they grip less until the slide settles. It's slow to change direction at speed, so brake before corners, or hold drift to swing the back round.
+- **Weighty car physics.** A 1350 kg raycast-suspension car with real body roll and weight transfer. Its tyres break into a slide when you push too hard, and they grip less until the slide settles. Quick to answer the wheel but planted: a stability assist stops it spinning when you ask too much, it runs wide instead. Brake for the tighter corners, or hold drift to swing the back round.
 - **Drift button.** Hold it to kick the back out and slide through corners. See [Drifting](#controls) below.
 - **Stunt grip.** On walls, ceilings, loops and rolls the tyres grip harder the faster you go. Above about 90 km/h the car sticks, so you can ride vertical walls and drive upside down. Below about 65 km/h gravity wins and you drop off. In the air the nose follows the flight path, so landings stay clean.
 - **Checkpoints and respawn.** Press <kbd>R</kbd> (or ↺) to go back to the last checkpoint: you start again standing still, upright and facing down the track, so nothing from a crash carries over. Press it twice quickly to restart the run from the start.
@@ -141,7 +141,7 @@ Every track needs one **Start** and at least one **Finish**. To finish, you have
 | Turns | Tight turn (1×1), Turn (2×2), Wide turn (3×3), Banked turn (2×2), Wide banked turn (3×3) |
 | Height | Ramp (+1 level over 2 tiles), Long ramp (+2 levels over 3 tiles). Rotated by 180° they work as downhills. |
 | Air | Jump (small kicker), Big jump (2-tile kicker that launches you far) |
-| Stunts | Loop left / right, Wall turn (2×2), Wide wall turn (3×3), Wall ride left / right (6 tiles), Corkscrew (360° roll, 7 tiles), Upside down (8 tiles, about 60 m driven on the ceiling) |
+| Stunts | Loop left / right, Wall turn (2×2), Wide wall turn (3×3), Wall ride left / right (9 tiles: a long roll onto the wall, a stretch on it and a long roll off), Corkscrew (360° roll, 7 tiles), Upside down (8 tiles, about 60 m driven on the ceiling) |
 | Arenas | Jump arena (3×3), Chicane arena (3×5), Turn arena (3×3, rotate for a right turn), Landing arena (3×4). Fenced set pieces with their obstacles already laid out around a racing line. |
 | Signs | Brake board 3, 2 and 1: straights with countdown boards. Put them in that order before a corner that needs braking. |
 | Open floor | Open floor, Pillar, Barrier, Cone lane, Speed bumps, Jump wedge. These are 1×1 floor tiles with no barriers that join on all four sides, so you can lay out your own open areas. |
@@ -230,9 +230,9 @@ Campaign tracks are written in a small "turtle" script in `js/tracks.js`. Each t
 
 Design rules from building the campaign (the full list is at the top of `js/tracks.js`):
 
-- **Pick the corner for the arrival speed.** Flat out on a straight is about 190 km/h. The fastest you can hold through each corner is roughly: tight turn 85 km/h, turn 125, wide turn 150, wide banked turn 165, turn arena 135. After a long straight, use wide or banked turns. Save normal turns for after something slow.
-- **Signpost real braking.** Braking from 190 to 125 km/h takes about 40 m, two tiles. Where a corner needs that, put `BRK` in front of it.
-- **Give stunts a straight run-in.** Upside-down sections need at least 115 km/h, so put a booster before them. Never put a corkscrew straight out of a turn.
+- **Pick the corner for the arrival speed.** Flat out on a straight is about 190 km/h. The fastest you can hold through each corner is roughly: tight turn 100 km/h, turn 150, wide turn 170, turn arena 150, and a wide banked turn holds almost any speed. After a long straight, use wide or banked turns. Save normal turns for after something slower.
+- **Signpost real braking.** Braking from 210 to 170 km/h takes about 30 m. Where a corner needs real braking, put `BRK` in front of it.
+- **Give stunts a straight run-in.** Put a booster before upside-down sections. Never put a corkscrew straight out of a turn.
 - **Give jumps a landing zone.** Use a landing arena (`AL`) after big jumps. Don't put a checkpoint where cars are still in the air.
 - **Open floor needs a reason.** Use the arenas rather than scattering obstacle tiles.
 
@@ -243,7 +243,11 @@ npm test                          # can every track be finished?
 node tools/lint.mjs               # does any corner ask for too much braking for its act?
 node tools/simulate.mjs --medals  # medal times
 node tools/handling.mjs           # re-measure the car's limits after a physics change
+node tools/feel.mjs               # how the handling feels, in numbers
+node tools/feel.mjs --robust      # how often a slightly unsteady human gets through
 ```
+
+`tools/feel.mjs` stands in for a play-tester: it measures how fast the car answers the wheel, how far it turns at speed, lane changes, corner limits and roll rates on wall pieces, and drives the campaign's situations (ramps, turns, S-bends, wall rides, wall turns) with a simulated human who reacts 0.12 s late and is a little unsteady. Try other values with `--set=gripLat=2.2,yawAssist=4`.
 
 <details>
 <summary><b>Project structure</b></summary>
@@ -271,7 +275,7 @@ js/audio.js           WebAudio engine/tyre/impact sounds and generative music
 js/ghost.js           ghost recording and playback
 js/bot.js             autopilot (menu demo and track tests)
 js/storage.js         localStorage helpers (best times, ghosts, tracks, settings)
-tools/                simulator, track lint, handling measurements, ASCII map
+tools/                simulator, track lint, handling and feel tests, ASCII map
 vendor/               three.js r170 (MIT licence)
 assets/               app icons and self-hosted fonts
 docs/readme/          images for this README
